@@ -38,6 +38,7 @@ git clone https://github.com/cangermueller/Chiron.git
 To install the Chiron package for code development, execute the following command in the Chiron root directory:
 
 ```
+cd Chiron
 python setup.py develop
 ```
 
@@ -55,7 +56,7 @@ cd ./train
 ```
 
 ## Using chiron
-Chiron provides a `train`, `call`, and `export` command for training, base calling, and exporting signal/label files from fast5 files.
+Chiron provides a `train`, `call`, and `export` command for training models, base calling, and exporting signal/label files from fast5 files.
 
 ```
 chiron {train,call,export} [FLAGS]
