@@ -6,7 +6,9 @@ Created on Mon Apr 10 04:16:40 2017
 @author: haotianteng
 """
 import labelop
-import os,argparse,sys
+import os
+import argparse
+import sys
 
 def extract(raw_folder = None):
     count = 1
@@ -25,6 +27,7 @@ def extract(raw_folder = None):
             if success:
                 count +=1
             sys.stdout.write("%s file transfered.   \n" % (file_n) )
+
 def extract_file(input_file,output_file):
     try:
         (raw_data, raw_label, raw_start, raw_length) = labelop.get_label_raw(input_file,FLAGS.basecall_group,FLAGS.basecall_subgroup)
@@ -35,16 +38,19 @@ def extract_file(input_file,output_file):
     f_signal = open(output_file+'.signal','w+')
     f_label = open(output_file+'.label','w+')
     f_signal.write(" ".join(str(val) for val in raw_data))
-    for index,start in enumerate(raw_start):    
+    for index,start in enumerate(raw_start):
         f_label.write("%d %d %c\n"%(start,start+raw_length[index],str(raw_label['base'][index])))
     f_signal.close()
     f_label.close()
     return True
-def run(args):
+
+def run(args, log):
     global FLAGS
+    global LOG
     FLAGS = args
+    LOG = log
     extract()
-            
+
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Transfer fast5 to raw_pair file.')
     parser.add_argument('-i','--input', help="Directory that store the fast5 files.")

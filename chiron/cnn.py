@@ -33,6 +33,7 @@ def conv_layer(indata,ksize,padding,training,name,dilate = 1,strides=[1,1,1,1],b
         with tf.variable_scope(name+'_relu'):
             conv_out = tf.nn.relu(conv_out,name='relu')
     return conv_out
+
 def batchnorm(inp,scope,training,decay = 0.99,epsilon = 1e-5):
     with tf.variable_scope(scope):
         size = inp.get_shape().as_list()[-1]
@@ -54,6 +55,7 @@ def batchnorm(inp,scope,training,decay = 0.99,epsilon = 1e-5):
             return tf.nn.batch_normalization(inp, pop_mean, pop_var, offset, scale, epsilon)
 
         return tf.cond(training, batch_statistics, population_statistics)
+
 def simple_global_bn(inp,name):
     ksize = inp.get_shape().as_list()
     ksize = [ksize[-1]]
@@ -61,6 +63,7 @@ def simple_global_bn(inp,name):
     scale = tf.get_variable(name+"_scale", shape=ksize)#,initializer=tf.contrib.layers.variance_scaling_initializer())
     offset = tf.get_variable(name+"_offset", shape=ksize)#,initializer=tf.contrib.layers.variance_scaling_initializer())
     return tf.nn.batch_normalization(inp,mean=mean,variance=variance,scale=scale,offset=offset,variance_epsilon=1e-5)
+
 def inception_layer(indata,training,times=16):
     """Inception module with dilate conv layer from http://arxiv.org/abs/1512.00567"""
     fea_shape = indata.get_shape().as_list()
@@ -83,6 +86,7 @@ def inception_layer(indata,training,times=16):
         conv0f = conv_layer(indata,ksize=[1,1,in_channel,times*2],padding = 'SAME',training = training,name = 'conv0f_1x1')
         conv1f = conv_layer(conv0f,ksize=[1,3,times*2,times*3],padding = 'SAME',training = training,name = 'conv1f_1x3_d3',dilate = 3)
     return(tf.concat([conv1a,conv0b,conv1c,conv1d,conv1e,conv1f],axis = -1,name = 'concat'))
+
 def residual_layer(indata,out_channel,training,i_bn = False):
     fea_shape = indata.get_shape().as_list()
     in_channel = fea_shape[-1]
@@ -95,31 +99,31 @@ def residual_layer(indata,out_channel,training,i_bn = False):
     with tf.variable_scope('plus'):
         relu_out = tf.nn.relu(indata_cp+conv_out3,name = 'final_relu')
     return relu_out
+
 def getcnnfeature(signal,training):
     signal_shape = signal.get_shape().as_list()
     signal = tf.reshape(signal,[signal_shape[0],1,signal_shape[1],1])
-    print(signal.get_shape())
 #    #Conv layer x 4
 #    with tf.variable_scope('conv_layer1'):
 #        conv1 = conv_layer(signal,ksize=[1,3,1,256],strides=[1,1,1,1],padding='SAME',training = training,name = 'conv')
-#    with tf.variable_scope('conv_layer2'):    
+#    with tf.variable_scope('conv_layer2'):
 #        conv2 = conv_layer(conv1,ksize=[1,5,256,256],strides=[1,1,1,1],padding='SAME',training= training,name = 'conv')
-#    with tf.variable_scope('conv_layer3'):    
+#    with tf.variable_scope('conv_layer3'):
 #        conv3 = conv_layer(conv2,ksize=[1,5,256,256],strides=[1,1,1,1],padding='SAME',training= training,name = 'conv')
-#    with tf.variable_scope('conv_layer4'):    
+#    with tf.variable_scope('conv_layer4'):
 #        conv4 = conv_layer(conv3,ksize=[1,5,256,256],strides=[1,1,1,1],padding='SAME',training= training,name = 'conv')
-#    with tf.variable_scope('conv_layer5'):    
+#    with tf.variable_scope('conv_layer5'):
 #        conv5 = conv_layer(conv4,ksize=[1,5,256,256],strides=[1,1,2,1],padding='SAME',training= training,name = 'conv')
 
 #    Inception layer x 9
-#    with tf.variable_scope('incp_layer1'):    
+#    with tf.variable_scope('incp_layer1'):
 #        incp5 = inception_layer(conv4,training)
 #    with tf.variable_scope('incp_layer2'):
 #        incp6 = inception_layer(incp5,training)
-#        
+#
 #    with tf.variable_scope('max_pool_1'):
 #        max_pool1 = tf.nn.max_pool(incp6,ksize = [1,1,3,1],strides = [1,1,2,1],padding = 'SAME',name='mp_1x3_s2')
-#        
+#
 #    with tf.variable_scope('incp_layer3'):
 #        incp7 = inception_layer(max_pool1,training)
 #    with tf.variable_scope('incp_layer4'):
@@ -130,15 +134,15 @@ def getcnnfeature(signal,training):
 #        incp10 = inception_layer(incp9,training)
 #    with tf.variable_scope('incp_layer7'):
 #        incp11 = inception_layer(incp10,training)
-#        
+#
 #    with tf.variable_scope('max_pool_2'):
 #        max_pool2 = tf.nn.max_pool(incp11,ksize = [1,1,3,1],strides = [1,1,2,1],padding = 'SAME',name='mp_1x3_s2')
-#    
+#
 #    with tf.variable_scope('incp_layer8'):
 #        incp12 = inception_layer(max_pool2,training)
 #    with tf.variable_scope('incp_layer9'):
 #        incp13 = inception_layer(incp12,training)
-#    
+#
 #    with tf.variable_scope('avg_pool_1'):
 #        avg_pool1 = tf.nn.avg_pool(incp13,ksize = [1,1,7,1],strides = [1,1,1,1],padding = 'SAME',name='ap_1x7_s1')
 
@@ -153,7 +157,7 @@ def getcnnfeature(signal,training):
 #        res4 = residual_layer(res3,out_channel = 512,training = training)
 #    with tf.variable_scope('res_layer5'):
 #        res5 = residual_layer(res4,out_channel = 512,training = training)
-        
+
     feashape = res3.get_shape().as_list()
     fea = tf.reshape(res3,[feashape[0],feashape[2],feashape[3]],name = 'fea_rs')
     return fea
