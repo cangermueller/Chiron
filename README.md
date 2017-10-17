@@ -62,7 +62,7 @@ Chiron provides a `train`, `call`, and `export` command for training models, bas
 chiron {train,call,export} [FLAGS]
 ```
 
-You can get more information about the different command by using the `--help` flag, e.g. `chiron train --help`, or reading the [official Chiron guide](https://github.com/haotianteng/Chiron).
+You can get more information about the different commands by using the `--help` flag, e.g. `chiron train --help`, or reading the [official Chiron guide](https://github.com/haotianteng/Chiron).
 
 
 ## Contact
