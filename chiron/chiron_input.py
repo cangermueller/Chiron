@@ -343,6 +343,7 @@ def read_label(file_path,skip_start=10,window_n = 0):
             k_mer = k_mer*4 + all_base[count+i-window_n]
         base.append(k_mer)
     return raw_labels(start=start,length=length,base=base)
+
 def read_raw(raw_signal,raw_label,max_seq_length):
     label_val = list()
     label_length=list()
