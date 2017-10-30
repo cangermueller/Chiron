@@ -14,4 +14,4 @@ num_epochs = 2
 lr = .001
 val_every = 100
 experiment = '1'
-restart = False #If false then it restores the model from the ckpt file specified in save_dir
+restart = True #If false then it restores the model from the ckpt file specified in save_dir

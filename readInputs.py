@@ -4,23 +4,12 @@ import os
 import tensorflow as tf
 import config
 
-#TO DO: FIX BUG WHERE 1 or 2 BASES ARE NOT PUT ON AT THE END, NOTHING MAJOR RIGHT NOW
-
 data_read_dir = config.data_read_dir
 data_write_dir = config.data_write_dir
 
 def baseIndex(base):
     bases = ['a', 'c', 't', 'g']
     return bases.index(base.lower())
-
-def padded(curSeq, curLab):
-    curSeq = np.asarray(curSeq)
-    curSeq = np.pad(curSeq, pad_width=(0, config.max_seq_len - len(curSeq)), mode='constant', constant_values=0) #Pad input sequence to max length
-
-    curLab = np.asarray(curLab)
-    curLab = np.pad(curLab, pad_width=(0, config.max_base_len - len(curLab)), mode='constant', constant_values=4) #Pad base sequence to max length
-    return curSeq.tolist(), curLab.tolist()
-
 
 def readPair(sig_file, lab_file):
     all_signals = list()
@@ -36,69 +25,63 @@ def readPair(sig_file, lab_file):
             all_labels += [[x for x in line.strip().split()]] #Start, End, Base
         if len(all_labels) == 0:
             return -1
-    curSeq, curLab, allSeq, allLab, sig_length, base_length = list(), list(), list(), list(), list(), list()
-    i = 0
+    cur_sig, cur_lab, div_sig, div_lab, sig_length, lab_length = list(), list(), list(), list(), list(), list()
+    
+    i = 0 #increment by whenever we actually consume a label triple
     while i < len(all_labels): #Loop through label triples and construct 300 base long sequences
         start, end, base = all_labels[i]
         start = int(start)
         end = int(end)
-        if end-start >= config.max_seq_len and len(curSeq) == 0: #Very rare special case when 1 base is more than max_seq_len signals and there is no curSeq
+        if end-start >= config.max_seq_len and len(cur_sig) == 0: #Very rare special case when 1 base is more than max_seq_len signals and there is no cur_sig
             sig_length.append(config.max_seq_len)
-            base_length.append(1)
-            curSeq = all_signals[start:start+config.max_seq_len]
-            curLab = [baseIndex(base)]
-            curSeq, curLab = padded(curSeq, curLab)
-            allSeq.append(curSeq)
-            allLab.append(curLab)
-            curSeq, curLab = list(), list()
+            lab_length.append(2)
+            cur_sig = np.asarray(all_signals[start:start+config.max_seq_len-1]) #I'm leaving 1 space for the padding token!
+            cur_lab = [baseIndex(base)] + [4]
+            cur_sig = (cur_sig - np.mean(cur_sig)) / np.float(np.std(cur_sig))
+            cur_sig = cur_sig.tolist() + [0.0]
+            div_sig.append(cur_sig)
+            div_lab.append(cur_lab)
+            cur_sig, cur_lab = list(), list()
             i += 1
-        elif end - start + len(curSeq) >= config.max_seq_len: #Done lengthening current sequence
-            sig_length.append(len(curSeq))
-            base_length.append(len(curLab))
-            curSeq, curLab = padded(curSeq, curLab)
-            allSeq.append(curSeq)
-            allLab.append(curLab)
-            curSeq, curLab = list(), list()
+        elif end - start + len(cur_sig) >= config.max_seq_len: #Done lengthening current sequence
+            sig_length.append(len(cur_sig) + 1)
+            lab_length.append(len(cur_lab) + 1)
+            cur_sig = (cur_sig - np.mean(cur_sig))/np.float(np.std(cur_sig))
+            cur_sig = cur_sig.tolist() + [0.0]
+            div_sig.append(cur_sig)
+            div_lab.append(cur_lab + [4])
+            cur_sig, cur_lab = list(), list() #no label triple actually consumed here!
         else:
-            curSeq += all_signals[start:end]
-            curLab += [baseIndex(base)]
+            cur_sig += all_signals[start:end]
+            cur_lab += [baseIndex(base)]
             i += 1
-    return allSeq, allLab, sig_length, base_length
-
-def _int64_feature(value):
-    return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
-
-def _float_feature(value):
-    return tf.train.Feature(float_list=tf.train.FloatList(value=value))
+    if cur_sig != []: #If we left any stragglers...
+        sig_length.append(len(cur_sig)+1)
+        lab_length.append(len(cur_lab)+1)
+        cur_sig = (cur_sig - np.mean(cur_sig))/np.float(np.std(cur_sig))
+        cur_sig = cur_sig.tolist()
+        div_sig.append(cur_sig + [0.0])
+        div_lab.append(cur_lab + [4])
+    return div_sig, div_lab, sig_length, lab_length
 
 def readAllFiles(signal_files, label_files):
-    for i in range(len(signal_files)): #Assumes signal and label files exactly line up, may need to sort before to ensure
+    for i in range(len(signal_files)):
         val = readPair(signal_files[i], label_files[i])
         if val == -1:
             continue
-        allSeq, allLab, sig_length, base_length = val
-        for j in range(len(allSeq)):
+        div_sig, div_lab, sig_length, lab_length = val
+        for j in range(len(div_sig)):
             file_only = os.path.basename(signal_files[i])
-            writer = tf.python_io.TFRecordWriter(os.path.join(data_write_dir, file_only[:-7]) + '_' + str(j) + '.tfrecord') #get rid of .signal ending and groupy shorter runs
-            ex = tf.train.SequenceExample()
-            ex.context.feature['sig_length'].int64_list.value.append(sig_length[j])
-            ex.context.feature['base_length'].int64_list.value.append(base_length[j])
-            tokens = ex.feature_lists.feature_list['tokens']
-            labels = ex.feature_lists.feature_list['labels']
-            for sig in allSeq[j]:
-                tokens.feature.add().int64_list.value.append(sig)
-            for l in allLab[j]:
-                labels.feature.add().int64_list.value.append(l)
-            writer.write(ex.SerializeToString())
-            writer.close()
+            with open(os.path.join(data_write_dir, file_only[:-7]) + '_' + str(j) + '_signal.txt', 'w') as f:
+                f.write(str(div_sig[j])[1: -1]) #hack to get rid of [ and ] from str(list)
+            with open(os.path.join(data_write_dir, file_only[:-7]) + '_' + str(j) + '_label.txt', 'w') as f:
+                f.write(str(div_lab[j])[1: -1])
 
-def sanityCheck():
-    pass
 
 def main():
-    signal_files = glob(os.path.join(data_read_dir, '*.signal'))
+    signal_files = glob(os.path.join(data_read_dir, '*.signal')) #May want to sort these but it is giving them in pairs for now...
     label_files = glob(os.path.join(data_read_dir, '*.label'))
-    signal_files = signal_files[:10]
+    signal_files = signal_files[:10] #I am just using a subset of the dataset for experimentation
     label_files = label_files[:10]
     readAllFiles(signal_files, label_files)
 
