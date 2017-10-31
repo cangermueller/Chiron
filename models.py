@@ -73,7 +73,9 @@ class Baseline(Model):
     def _loss(self):
         with tf.variable_scope('loss') as scope:
             mask = tf.to_float(tf.not_equal(self.labels, 4)) #mask out the padded outputs
-            self.loss = tf.contrib.seq2seq.sequence_loss(self.logits, self.labels, mask)
+            crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.labels, logits=self.logits)
+            self.loss = tf.reduce_sum(crossent * mask) / config.batch
+            # self.loss = tf.contrib.seq2seq.sequence_loss(self.logits, self.labels, mask)
 
     def train_op(self):
         with tf.variable_scope('train') as scope:
