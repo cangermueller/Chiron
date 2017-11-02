@@ -14,6 +14,7 @@ class Model:
             self.labels = tf.placeholder(tf.int32, [None, None], name="label_placeholder")
             self.sig_length = tf.placeholder(tf.int32, [None], name='sig_length_placeholder')
             self.base_length = tf.placeholder(tf.int32, [None], name='base_length_placeholder')
+            self.dropout_keep = tf.placeholder(tf.float32, [], name='dropout_keep')
 
     def inference(self):
         pass
@@ -37,18 +38,19 @@ class Baseline(Model):
 
     def resBlock(self, inputs, module_scope):
         with tf.variable_scope(module_scope) as scope:
-            inputs = tf.expand_dims(inputs, axis=-1)
-            conv1 = tf.layers.conv1d(inputs, filters=256, kernel_size=1, strides=1, use_bias=False, padding='same')
+            if module_scope == 'res1': #We only need to make it 3 dimensional on the first block
+                inputs = tf.expand_dims(inputs, axis=-1)
+            conv1 = tf.layers.conv1d(inputs, filters=256, kernel_size=1, strides=1, use_bias=False, padding='same', activation=tf.nn.relu)
             conv1a = tf.layers.conv1d(inputs, filters=256, kernel_size=1, strides=1, padding='same')
-            conv2 = tf.layers.conv1d(conv1, filters=256, kernel_size=3, strides=1, use_bias=False, padding='same')
+            conv2 = tf.layers.conv1d(conv1, filters=256, kernel_size=3, strides=1, use_bias=False, padding='same', activation=tf.nn.relu)
             conv3 = tf.layers.conv1d(conv2, filters=256, kernel_size=1, strides=1, use_bias=False, padding='same')
             return tf.nn.relu(conv3 + conv1a)
 
     def encode(self, module_scope): #Just 1 residual block for now
         with tf.variable_scope(module_scope) as scope:
             self.conv_encoding = self.resBlock(self.signals, 'res1')
-            forward = tf.nn.rnn_cell.BasicLSTMCell(100)
-            backward = tf.nn.rnn_cell.BasicLSTMCell(100)
+            forward = tf.nn.rnn_cell.BasicLSTMCell(config.lstm_size)
+            backward = tf.nn.rnn_cell.BasicLSTMCell(config.lstm_size)
             bi_outputs, last_encoder_state = tf.nn.bidirectional_dynamic_rnn(forward, backward, self.conv_encoding, sequence_length=self.sig_length, time_major=False, dtype=tf.float32)
             bi_outputs = tf.concat(bi_outputs, -1) #Fuse both directions
             c1, h1, c2, h2 = last_encoder_state[0].c, last_encoder_state[0].h, last_encoder_state[1].c, last_encoder_state[1].h

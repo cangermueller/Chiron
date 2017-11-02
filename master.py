@@ -7,6 +7,7 @@ import numpy as np
 
 import config
 import models
+import super_baseline
 
 train_dir = config.data_train_dir
 val_dir = config.data_val_dir
@@ -45,8 +46,10 @@ def train(model):
     best_val_loss = 1000.0
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        
+
+        writer = tf.summary.FileWriter(os.path.dirname(os.path.join(config.save_dir, config.model, config.experiment)), sess.graph)
         ckpt = tf.train.get_checkpoint_state(os.path.dirname(os.path.join(config.save_dir, config.model, config.experiment) + '/checkpoint'))
+
         if ckpt and ckpt.model_checkpoint_path and not config.restart:
             saver.restore(sess, ckpt.model_checkpoint_path)
             print 'Restored model from folder ' + ckpt.model_checkpoint_path
@@ -63,14 +66,16 @@ def train(model):
                         continue
                     
                     _, loss_batch = sess.run([model.opt, model.loss], 
-                        feed_dict={model.signals: signals, model.labels:labels, model.sig_length:sig_length, model.base_length:base_length})
+                        feed_dict={model.signals: signals, model.labels: labels, model.sig_length: sig_length, 
+                            model.base_length: base_length, model.dropout_keep: config.dropout_keep})
                     print 'Batch Loss is ', loss_batch 
                     if batch_num % config.val_every == 0: #Perform a validation every config.val_every batches
                         try:
                             batch = sess.run(val_batch)
                             signals, labels, sig_length, base_length = batch[0][0], batch[1][0], batch[0][1], batch[1][1] 
                             val_loss_batch = sess.run([model.loss], 
-                                feed_dict={model.signals: signals, model.labels:labels, model.sig_length:sig_length, model.base_length:base_length})[0]
+                                feed_dict={model.signals: signals, model.labels: labels, model.sig_length: sig_length, 
+                                model.base_length: base_length, model.dropout_keep: 1.0})[0]
                             if val_loss_batch < best_val_loss:
                                 save_path = saver.save(sess, os.path.join(config.save_dir, config.model, config.experiment, str(batch_num)) + '.ckpt')
                                 print("Model saved in file: %s" % save_path)
@@ -84,6 +89,7 @@ def train(model):
                     print 'End of Epoch ' + str(i)
                     batch_num = 0
                     break
+        writer.close()
 
 def pred(model):
     pred_iterator = getDatasetIterator(os.path.join(config.pred_dir, '*signal.txt'), os.path.join(config.pred_dir, '*label.txt'))
@@ -106,8 +112,8 @@ def pred(model):
                 if len(signals) != config.batch: #We really need exactly batch number of samples
                         continue
 
-                batch_predictions = sess.run([model.predictions], feed_dict={model.signals: signals, model.labels:labels, 
-                    model.sig_length:sig_length, model.base_length:base_length})
+                batch_predictions = sess.run([model.predictions], feed_dict={model.signals: signals, model.labels: labels, 
+                    model.sig_length: sig_length, model.base_length: base_length, model.dropout_keep: 1.0})
             except tf.errors.OutOfRangeError:
                     print 'Finished Making Predictions'
                     break
@@ -116,6 +122,8 @@ def main():
     model = None
     if config.model == 'Baseline':
         model = models.Baseline()
+    if config.model == 'SuperBaseline':
+        model = super_baseline.SuperBaseline()
     if config.train:
         model.build_graph()
         train(model)
