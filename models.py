@@ -6,7 +6,10 @@ from tensorflow.python.layers import core as core_layers
 
 class Model:
     def __init__(self):
-        pass
+        self.logits = None
+        self.predictions = None
+        self.mask = None
+        self.edit_distance = None
 
     def create_placeholder(self):
         with tf.name_scope('data'):
@@ -15,6 +18,7 @@ class Model:
             self.sig_length = tf.placeholder(tf.int32, [None], name='sig_length_placeholder')
             self.base_length = tf.placeholder(tf.int32, [None], name='base_length_placeholder')
             self.dropout_keep = tf.placeholder(tf.float32, [], name='dropout_keep')
+            self.is_training = tf.placeholder(tf.bool, [], name='is_training')
 
     def inference(self):
         pass
@@ -25,11 +29,18 @@ class Model:
     def train_op(self):
         pass
 
+    def compute_performance_metrics(self):
+        self.accuracy = tf.metrics.accuracy(self.labels, self.predictions, weights=self.mask)
+        self.recall = tf.metrics.recall(self.labels, self.predictions, weights=self.mask)
+        self.precision = tf.metrics.precision(self.labels, self.predictions, weights=self.mask)
+        # self.edit_distance = 
+
     def build_graph(self):
         self.create_placeholder()
         self.inference()
         self._loss()
         self.train_op()
+        self.compute_performance_metrics()
 
 class Baseline(Model):
     def setup_embeddings(self, module_scope):
@@ -74,9 +85,9 @@ class Baseline(Model):
 
     def _loss(self):
         with tf.variable_scope('loss') as scope:
-            mask = tf.to_float(tf.not_equal(self.labels, 4)) #mask out the padded outputs
+            self.mask = tf.to_float(tf.not_equal(self.labels, 4)) #mask out the padded outputs
             crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.labels, logits=self.logits)
-            self.loss = tf.reduce_sum(crossent * mask) / config.batch
+            self.loss = tf.reduce_sum(crossent * self.mask) / config.batch
             # self.loss = tf.contrib.seq2seq.sequence_loss(self.logits, self.labels, mask)
 
     def train_op(self):

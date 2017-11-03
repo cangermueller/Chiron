@@ -7,6 +7,7 @@ data_val_dir = '/Users/yiannilaloudakis/Desktop/basecalling/171016_large/val_par
 pred_dir = data_val_dir
 save_dir = '/Users/yiannilaloudakis/Desktop/basecalling/savedModels'
 log_dir =  '/Users/yiannilaloudakis/Desktop/basecalling/logs'
+pred_output_dir = '/Users/yiannilaloudakis/Desktop/basecalling/predictions'
 
 model = 'SuperBaseline'
 experiment = '1'

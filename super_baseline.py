@@ -10,9 +10,11 @@ class SuperBaseline(models.Baseline):
     def encode(self, module_scope): 
         with tf.variable_scope(module_scope) as scope:
             res1 = self.resBlock(self.signals, 'res1') #Lets get a representation of each time step first
-            res2 = self.resBlock(res1, 'res2')
-            res3 = self.resBlock(res2, 'res3')
-
+            res1_batch = tf.contrib.layers.batch_norm(res1, center=True, scale=True, is_training=True, scope='bn1')
+            res2 = self.resBlock(res1_batch, 'res2')
+            res2_batch = tf.contrib.layers.batch_norm(res2, center=True, scale=True, is_training=True, scope='bn2')
+            res3 = self.resBlock(res2_batch, 'res3')
+            res3_batch = tf.contrib.layers.batch_norm(res3, center=True, scale=True, is_training=True, scope='bn3')
             res3 = tf.nn.dropout(res3, self.dropout_keep) #dropout on the last layer to give noisier inputs to rnn
             										   
             forward_cells = [tf.nn.rnn_cell.BasicLSTMCell(config.lstm_size) for i in range(3)] #Then let's get a representation of the entire series!

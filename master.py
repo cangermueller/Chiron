@@ -12,9 +12,9 @@ import super_baseline
 train_dir = config.data_train_dir
 val_dir = config.data_val_dir
 
-def getDatasetIterator(sig, lab):
+def getDatasetIterator(sig):
     sig_files = glob(sig)
-    lab_files = glob(lab)
+    lab_files = [f[:-11] + '_label.txt' for f in sig_files]
     sig_dataset = tf.contrib.data.TextLineDataset(sig_files)
     sig_dataset = sig_dataset.map(lambda string: tf.string_split([string], delimiter=',').values)
     sig_dataset = sig_dataset.map(lambda sequence: (sequence, tf.size(sequence))) #Dont forget about this!!!
@@ -36,8 +36,8 @@ def getDatasetIterator(sig, lab):
     return batched_iterator
 
 def train(model):
-    train_iterator = getDatasetIterator(os.path.join(train_dir, '*signal.txt'), os.path.join(train_dir, '*label.txt'))
-    val_iterator = getDatasetIterator(os.path.join(val_dir, '*signal.txt'), os.path.join(val_dir, '*label.txt'))
+    train_iterator = getDatasetIterator(os.path.join(train_dir, '*signal.txt'))
+    val_iterator = getDatasetIterator(os.path.join(val_dir, '*signal.txt'))
     train_batch = train_iterator.get_next()
     val_batch = val_iterator.get_next()
 
@@ -49,7 +49,7 @@ def train(model):
 
         writer = tf.summary.FileWriter(os.path.dirname(os.path.join(config.save_dir, config.model, config.experiment)), sess.graph)
         ckpt = tf.train.get_checkpoint_state(os.path.dirname(os.path.join(config.save_dir, config.model, config.experiment) + '/checkpoint'))
-
+        writer.close()
         if ckpt and ckpt.model_checkpoint_path and not config.restart:
             saver.restore(sess, ckpt.model_checkpoint_path)
             print 'Restored model from folder ' + ckpt.model_checkpoint_path
@@ -67,7 +67,7 @@ def train(model):
                     
                     _, loss_batch = sess.run([model.opt, model.loss], 
                         feed_dict={model.signals: signals, model.labels: labels, model.sig_length: sig_length, 
-                            model.base_length: base_length, model.dropout_keep: config.dropout_keep})
+                            model.base_length: base_length, model.dropout_keep: config.dropout_keep, model.is_training:True})
                     print 'Batch Loss is ', loss_batch 
                     if batch_num % config.val_every == 0: #Perform a validation every config.val_every batches
                         try:
@@ -75,7 +75,7 @@ def train(model):
                             signals, labels, sig_length, base_length = batch[0][0], batch[1][0], batch[0][1], batch[1][1] 
                             val_loss_batch = sess.run([model.loss], 
                                 feed_dict={model.signals: signals, model.labels: labels, model.sig_length: sig_length, 
-                                model.base_length: base_length, model.dropout_keep: 1.0})[0]
+                                model.base_length: base_length, model.dropout_keep: 1.0, model.is_training:False})[0]
                             if val_loss_batch < best_val_loss:
                                 save_path = saver.save(sess, os.path.join(config.save_dir, config.model, config.experiment, str(batch_num)) + '.ckpt')
                                 print("Model saved in file: %s" % save_path)
@@ -92,7 +92,7 @@ def train(model):
         writer.close()
 
 def pred(model):
-    pred_iterator = getDatasetIterator(os.path.join(config.pred_dir, '*signal.txt'), os.path.join(config.pred_dir, '*label.txt'))
+    pred_iterator = getDatasetIterator(os.path.join(config.pred_dir, '*signal.txt'))
     pred_batch = pred_iterator.get_next()
     saver = tf.train.Saver()
     with tf.Session() as sess:
@@ -113,7 +113,7 @@ def pred(model):
                         continue
 
                 batch_predictions = sess.run([model.predictions], feed_dict={model.signals: signals, model.labels: labels, 
-                    model.sig_length: sig_length, model.base_length: base_length, model.dropout_keep: 1.0})
+                    model.sig_length: sig_length, model.base_length: base_length, model.dropout_keep: 1.0, model.is_training:False})
             except tf.errors.OutOfRangeError:
                     print 'Finished Making Predictions'
                     break
