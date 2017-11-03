@@ -8,6 +8,7 @@ import numpy as np
 import config
 import models
 import super_baseline
+import history
 
 train_dir = config.data_train_dir
 val_dir = config.data_val_dir
@@ -44,12 +45,17 @@ def train(model):
     saver = tf.train.Saver()
     batch_num = 0
     best_val_loss = 1000.0
+
+    train_his = history.History(config.lr, config.dropout_keep)
+    val_his = history.History(config.lr, config.dropout_keep)
+
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer()) #Apparently needed for accuracy, and recall etc. to be initialized?
 
-        writer = tf.summary.FileWriter(os.path.dirname(os.path.join(config.save_dir, config.model, config.experiment)), sess.graph)
+        writer = tf.summary.FileWriter(os.path.join(config.save_dir, config.model, config.experiment), sess.graph)
         ckpt = tf.train.get_checkpoint_state(os.path.dirname(os.path.join(config.save_dir, config.model, config.experiment) + '/checkpoint'))
-        writer.close()
+
         if ckpt and ckpt.model_checkpoint_path and not config.restart:
             saver.restore(sess, ckpt.model_checkpoint_path)
             print 'Restored model from folder ' + ckpt.model_checkpoint_path
@@ -65,23 +71,25 @@ def train(model):
                     if len(signals) != config.batch: #We really need exactly batch number of samples
                         continue
                     
-                    _, loss_batch = sess.run([model.opt, model.loss], 
+                    _, loss_batch, train_acc, train_recall, train_prec = sess.run([model.opt, model.loss, model.accuracy, model.recall, model.precision], 
                         feed_dict={model.signals: signals, model.labels: labels, model.sig_length: sig_length, 
                             model.base_length: base_length, model.dropout_keep: config.dropout_keep, model.is_training:True})
                     print 'Batch Loss is ', loss_batch 
+                    train_his.update(loss_batch, train_acc, train_recall, train_prec)
                     if batch_num % config.val_every == 0: #Perform a validation every config.val_every batches
                         try:
                             batch = sess.run(val_batch)
                             signals, labels, sig_length, base_length = batch[0][0], batch[1][0], batch[0][1], batch[1][1] 
-                            val_loss_batch = sess.run([model.loss], 
+                            val_loss_batch, val_acc, val_prec, val_recall = sess.run([model.loss, model.accuracy, model.precision, model.recall], 
                                 feed_dict={model.signals: signals, model.labels: labels, model.sig_length: sig_length, 
-                                model.base_length: base_length, model.dropout_keep: 1.0, model.is_training:False})[0]
+                                model.base_length: base_length, model.dropout_keep: 1.0, model.is_training:False})
                             if val_loss_batch < best_val_loss:
                                 save_path = saver.save(sess, os.path.join(config.save_dir, config.model, config.experiment, str(batch_num)) + '.ckpt')
                                 print("Model saved in file: %s" % save_path)
                                 best_val_loss = val_loss_batch
                             print 'Val Batch Loss is ', val_loss_batch
                             print 'Best Val Batch Loss is', best_val_loss
+                            val_his.update(val_loss_batch, val_acc, val_prec, val_recall)
                         except tf.errors.OutOfRangeError:
                             print 'No more batches in validation set, wait until next epoch'
                     batch_num += 1
@@ -90,6 +98,8 @@ def train(model):
                     batch_num = 0
                     break
         writer.close()
+        train_his.dump(os.path.join(config.save_dir, config.model, config.experiment, 'train.csv'))
+        val_his.dump(os.path.join(config.save_dir, config.model, config.experiment, 'val.csv'))
 
 def pred(model):
     pred_iterator = getDatasetIterator(os.path.join(config.pred_dir, '*signal.txt'))

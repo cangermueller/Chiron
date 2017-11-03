@@ -29,6 +29,11 @@ def readPair(sig_file, lab_file):
             all_labels += [[x for x in line.strip().split()]] #Start, End, Base
         if len(all_labels) == 0:
             return -1
+
+    all_signals = np.asarray(all_signals) #Normalize the entire sequence BEFORE splitting
+    all_signals = (all_signals - np.mean(all_signals)) / np.float(np.std(all_signals))
+    all_signals = all_signals.tolist()
+
     cur_sig, cur_lab, div_sig, div_lab = [], [], [], []
     i = 0 #increment by whenever we actually consume a label triple
     while i < len(all_labels): #Loop through label triples and construct 300 base long sequences
@@ -36,18 +41,14 @@ def readPair(sig_file, lab_file):
         start = int(start)
         end = int(end)
         if end-start >= config.max_seq_len and len(cur_sig) == 0: #Very rare special case when 1 base is more than max_seq_len signals and there is no cur_sig
-            cur_sig = np.asarray(all_signals[start:start+config.max_seq_len-1]) #I'm leaving 1 space for the padding token!
+            cur_sig = all_signals[start:start+config.max_seq_len-1] + [SIG_PAD] #I'm leaving 1 space for the padding token!
             cur_lab = [baseIndex(base)] + [LAB_PAD]
-            cur_sig = (cur_sig - np.mean(cur_sig)) / np.float(np.std(cur_sig))
-            cur_sig = cur_sig.tolist() + [SIG_PAD]
             div_sig.append(cur_sig)
             div_lab.append(cur_lab)
             cur_sig, cur_lab = [], []
             i += 1
         elif end - start + len(cur_sig) >= config.max_seq_len: #Done lengthening current sequence
-            cur_sig = (cur_sig - np.mean(cur_sig))/np.float(np.std(cur_sig))
-            cur_sig = cur_sig.tolist() + [SIG_PAD]
-            div_sig.append(cur_sig)
+            div_sig.append(cur_sig + [SIG_PAD])
             div_lab.append(cur_lab + [LAB_PAD])
             cur_sig, cur_lab = [], [] #no label triple actually consumed here!
         else:
@@ -55,9 +56,7 @@ def readPair(sig_file, lab_file):
             cur_lab += [baseIndex(base)]
             i += 1
     if cur_sig != []: #If we left any stragglers...
-        cur_sig = (cur_sig - np.mean(cur_sig))/np.float(np.std(cur_sig))
-        cur_sig = cur_sig.tolist() + [SIG_PAD]
-        div_sig.append(cur_sig)
+        div_sig.append(cur_sig + [SIG_PAD])
         div_lab.append(cur_lab + [LAB_PAD])
     return div_sig, div_lab
 
