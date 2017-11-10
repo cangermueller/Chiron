@@ -75,7 +75,7 @@ def train(model):
                         feed_dict={model.signals: signals, model.labels: labels, model.sig_length: sig_length, 
                             model.base_length: base_length, model.dropout_keep: config.dropout_keep, model.is_training:True})
                     print 'Batch Loss is ', loss_batch 
-                    train_his.update(loss_batch, train_acc, train_recall, train_prec)
+                    train_his.update(loss_batch, train_acc[0], train_recall[0], train_prec[0])
                     if batch_num % config.val_every == 0: #Perform a validation every config.val_every batches
                         try:
                             batch = sess.run(val_batch)
@@ -89,7 +89,7 @@ def train(model):
                                 best_val_loss = val_loss_batch
                             print 'Val Batch Loss is ', val_loss_batch
                             print 'Best Val Batch Loss is', best_val_loss
-                            val_his.update(val_loss_batch, val_acc, val_prec, val_recall)
+                            val_his.update(val_loss_batch, val_acc[0], val_prec[0], val_recall[0])
                         except tf.errors.OutOfRangeError:
                             print 'No more batches in validation set, wait until next epoch'
                     batch_num += 1
