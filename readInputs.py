@@ -31,7 +31,8 @@ def readPair(sig_file, lab_file):
             return -1
 
     all_signals = np.asarray(all_signals) #Normalize the entire sequence BEFORE splitting
-    all_signals = (all_signals - np.mean(all_signals)) / np.float(np.std(all_signals))
+    if config.normalize:
+        all_signals = (all_signals - np.mean(all_signals)) / np.float(np.std(all_signals))
     all_signals = all_signals.tolist()
 
     cur_sig, cur_lab, div_sig, div_lab = [], [], [], []
