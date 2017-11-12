@@ -43,8 +43,10 @@ class Model:
     def build_train_graph(self):
         self.create_placeholder()
         self.setup_embeddings('embeddings')
-        self.inference(tf.contrib.seq2seq.TrainingHelper(tf.nn.embedding_lookup(self.base_embeddings, self.labels),
-                self.base_length, time_major=False))
+        feed_labels = tf.concat((tf.expand_dims(tf.fill([config.batch], 5), 1), self.labels[:, :-1]), axis=1) #This may fix the problem...
+        helper = tf.contrib.seq2seq.TrainingHelper(tf.nn.embedding_lookup(self.base_embeddings, feed_labels),
+                self.base_length, time_major=False)
+        self.inference(helper)
         self._loss()
         self.train_op()
         self._summary()

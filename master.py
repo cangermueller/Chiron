@@ -157,8 +157,8 @@ def main():
     train_model = None
     val_model = None
     if config.model == 'Baseline':
-        train_model = models2.Baseline()
-        val_model = models2.Baseline()
+        train_model = models.Baseline()
+        val_model = models.Baseline()
     if config.model == 'SuperBaseline':
         train_model = super_baseline.SuperBaseline()
         val_model = super_baseline.SuperBaseline()
