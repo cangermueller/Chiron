@@ -13,8 +13,11 @@ LAB_START = 5
 
 def baseIndex(base):
     bases = ['a', 'c', 't', 'g']
-    return bases.index(base.lower())
-
+    if base.lower() in bases:
+        return bases.index(base.lower())
+    else:
+        return -1
+    
 def readPair(sig_file, lab_file):
     all_signals = list()
     all_labels = list()
@@ -41,9 +44,12 @@ def readPair(sig_file, lab_file):
         start, end, base = all_labels[i]
         start = int(start)
         end = int(end)
+        base = baseIndex(base)
+        if base == -1: #Some weird files have N instead of A,T,C,G ignore those??
+            return -1
         if end-start >= config.max_seq_len and len(cur_sig) == 0: #Very rare special case when 1 base is more than max_seq_len signals and there is no cur_sig
             cur_sig = all_signals[start:start+config.max_seq_len-1] + [SIG_PAD] #I'm leaving 1 space for the padding token!
-            cur_lab = [baseIndex(base)] + [LAB_PAD]
+            cur_lab = [base] + [LAB_PAD]
             div_sig.append(cur_sig)
             div_lab.append(cur_lab)
             cur_sig, cur_lab = [], []
@@ -54,7 +60,7 @@ def readPair(sig_file, lab_file):
             cur_sig, cur_lab = [], [] #no label triple actually consumed here!
         else:
             cur_sig += all_signals[start:end]
-            cur_lab += [baseIndex(base)]
+            cur_lab += [base]
             i += 1
     if cur_sig != []: #If we left any stragglers...
         div_sig.append(cur_sig + [SIG_PAD])
@@ -62,10 +68,14 @@ def readPair(sig_file, lab_file):
     return div_sig, div_lab
 
 def readAllFiles(signal_files):
+    problemFiles = []
     for i in range(len(signal_files)):
+        if i % 1000 == 0:
+            print i
         label_file = signal_files[i][:-7] + '.label'
         val = readPair(signal_files[i], label_file)
         if val == -1:
+            problemFiles.append(label_file)
             continue
         div_sig, div_lab = val
         for j in range(len(div_sig)):
@@ -74,7 +84,7 @@ def readAllFiles(signal_files):
                 f.write(str(div_sig[j])[1: -1]) #hack to get rid of [ and ] from str(list)
             with open(os.path.join(data_write_dir, file_only[:-7]) + '_' + str(j) + '_label.txt', 'w') as f:
                 f.write(str(div_lab[j])[1: -1])
-
+    print problemFiles
 
 def main():
     signal_files = glob(os.path.join(data_read_dir, '*.signal'))
