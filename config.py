@@ -8,8 +8,8 @@ pred_dir = data_val_dir
 save_dir = './savedModels'
 pred_output_dir = './predictions'
 
-model = 'SuperBaseline'
-experiment = '1'
+model = 'Achilles'
+experiment = '3'
 
 max_seq_len = 300
 max_base_len = 75
@@ -18,10 +18,12 @@ lstm_size = 100
 dropout_keep = .8
 
 train = True #Do you want to train or pred?
-batch = 16
+batch = 32
 max_step = 20
 lr = .001
 val_every = 5
 restart = True #If false then it restores the model from the ckpt file specified in save_dir
 
 normalize = False #Honestly don't know what to do about this one...
+verbose = True
+print_every = 100

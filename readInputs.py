@@ -88,6 +88,20 @@ def readAllFiles(signal_files):
 
 def main():
     signal_files = glob(os.path.join(data_read_dir, '*.signal'))
+    ecoli, phage, human = [], [], []
+    for s in signal_files:
+        sl = s.lower()
+        if 'lambda' in sl:
+            phage.append(s)
+        elif 'human' in sl:
+            human.append(s)
+        else:
+            ecoli.append(s)
+    ecoli = sorted(ecoli)
+    phage = sorted(phage)
+    human = sorted(human)
+    print len(ecoli), len(phage), len(human)
+    # signal_files = ecoli[:2000] + phage[:2000] #This this to get a larger subset of the data
     signal_files = signal_files[:10] #I am just using a subset of the dataset for experimentation
     readAllFiles(signal_files)
 

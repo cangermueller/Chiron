@@ -7,8 +7,6 @@ import numpy as np
 
 import config
 import models
-import super_baseline
-import history
 
 train_dir = config.data_train_dir
 val_dir = config.data_val_dir
@@ -32,14 +30,15 @@ def getDatasetIterator(sig, padding_num=None):
     lab_dataset = lab_dataset.map(lambda sequence: (sequence, tf.size(sequence)))
     lab_dataset = lab_dataset.map(lambda seq, length: (tf.string_to_number(seq, out_type=tf.int32), length))
     dataset = tf.contrib.data.Dataset.zip((sig_dataset, lab_dataset))
-    batched_dataset = dataset.padded_batch(
+    batched_shuffled_dataset = dataset.shuffle(config.batch)
+    batched_shuffled_padded_dataset = batched_shuffled_dataset.padded_batch(
         config.batch,
         padded_shapes=((tf.TensorShape([None]),  # source vectors of unknown size
                         tf.TensorShape([])),     # size(source)
                        (tf.TensorShape([padding_num]),  # target vectors of unknown size
                         tf.TensorShape([]))),    # size(target)
         padding_values=((0.0, 0), (4, 0)))       #Pad signal with 0.0 and label with 4 and don't pad the two lengths
-    batched_iterator = batched_dataset.make_initializable_iterator()   
+    batched_iterator = batched_shuffled_padded_dataset.make_initializable_iterator()   
     return batched_iterator
 
 def train(train_model, val_model):
@@ -86,11 +85,11 @@ def train(train_model, val_model):
                 _, loss_batch, train_summary = train_sess.run([train_model.opt, train_model.loss, train_model.summary_op], 
                     feed_dict={train_model.signals: signals, train_model.labels: labels, train_model.sig_length: sig_length, 
                         train_model.base_length: base_length, train_model.dropout_keep: config.dropout_keep, train_model.is_training:True, train_model.lr:config.lr})
-                print 'Batch Loss is ', loss_batch 
+                if config.verbose or config.print_every % i == 0:
+                    print 'Batch Loss is ', loss_batch 
                 train_writer.add_summary(train_summary, global_step=i)
                 
                 if i % config.val_every == 0: #Perform a validation every config.val_every batches
-                    print 'On step ' + str(i)
                     save_path = train_saver.save(train_sess, os.path.join(config.save_dir, config.model, config.experiment, 'train', str(i)) + '.ckpt')
                     val_saver.restore(val_sess, save_path)
                     try:
@@ -107,7 +106,7 @@ def train(train_model, val_model):
                             save_path = val_saver.save(val_sess, os.path.join(config.save_dir, config.model, config.experiment, 'val', str(i)) + '.ckpt')
                             print("Model saved in file: %s" % save_path)
                             best_val_loss = val_loss_batch
-                        print 'Val Batch Loss is ', val_loss_batch
+                        print 'Val Batch Loss is on step ' + str(i), val_loss_batch
                         print 'Best Val Batch Loss is', best_val_loss
                     except tf.errors.OutOfRangeError:
                         val_sess.run(val_iterator.initializer)
@@ -123,7 +122,7 @@ def pred(model):
     model.build_val_graph()
     pred_iterator, pred_files = getDatasetIterator(os.path.join(config.pred_dir, '*signal.txt'))
     if len(pred_files) % config.batch != 0:
-        print 'If signals is not divisible by batch size, you are going to have a bad time'
+        print 'If signals is not divisible by batch size, you are going to have a bad time.'
         print len(pred_files)
         return
     pred_batch = pred_iterator.get_next()
@@ -139,7 +138,7 @@ def pred(model):
             print 'Restored model from folder ' + ckpt.model_checkpoint_path
         while True:
             try:
-                batch = sess.run(pred_batch) #This works for val, but we will need to rework for test because we have no labels!
+                batch = sess.run(pred_batch)
                 signals, sig_length = batch
                 if len(signals) != config.batch: #We really need exactly batch number of samples
                     continue
@@ -156,12 +155,12 @@ def pred(model):
 def main():
     train_model = None
     val_model = None
-    if config.model == 'Baseline':
-        train_model = models.Baseline()
-        val_model = models.Baseline()
-    if config.model == 'SuperBaseline':
-        train_model = super_baseline.SuperBaseline()
-        val_model = super_baseline.SuperBaseline()
+    if config.model == 'BabyAchilles':
+        train_model = models.BabyAchilles()
+        val_model = models.BabyAchilles()
+    if config.model == 'Achilles':
+        train_model = models.Achilles()
+        val_model = models.Achilles()
     if config.train:
         train(train_model, val_model)
     else:
