@@ -88,7 +88,7 @@ class BabyAchilles(seq2seqModel):
             encoding, last_encoder_state = encoding_tup
             decoder_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=200)
             attention_mechanism = tf.contrib.seq2seq.LuongAttention(num_units=200, memory=encoding, memory_sequence_length=self.sig_length)
-            decoder_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, attention_mechanism, attention_layer_size=50)
+            decoder_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, attention_mechanism, attention_layer_size=100)
             
             initial_state = decoder_cell.zero_state(dtype=tf.float32, batch_size=config.batch)
             initial_state = initial_state.clone(cell_state=last_encoder_state)
@@ -120,17 +120,17 @@ class Achilles(BabyAchilles):
     def encode(self, module_scope): 
         with tf.variable_scope(module_scope) as scope:
             res1 = self.resBlock(tf.expand_dims(self.signals, axis=-1), 'res1') #Lets get a representation of each time step first
-            res1_batch = tf.contrib.layers.batch_norm(res1, center=True, scale=True, is_training=True, scope='bn1')
+            res1_batch = tf.contrib.layers.batch_norm(res1, center=True, scale=True, is_training=self.is_training, scope='bn1')
             res2 = self.resBlock(res1_batch, 'res2')
-            res2_batch = tf.contrib.layers.batch_norm(res2, center=True, scale=True, is_training=True, scope='bn2')
+            res2_batch = tf.contrib.layers.batch_norm(res2, center=True, scale=True, is_training=self.is_training, scope='bn2')
             res3 = self.resBlock(res2_batch, 'res3')
-            res3_batch = tf.contrib.layers.batch_norm(res3, center=True, scale=True, is_training=True, scope='bn3')
-            res3 = tf.nn.dropout(res3, self.dropout_keep) #dropout on the last layer to give noisier inputs to rnn
+            res3_batch = tf.contrib.layers.batch_norm(res3, center=True, scale=True, is_training=self.is_training, scope='bn3')
+            res3_drop = tf.nn.dropout(res3_batch, self.dropout_keep) #dropout on the last layer to give noisier inputs to rnn
                                                        
             forward_cells = [tf.nn.rnn_cell.BasicLSTMCell(config.lstm_size) for i in range(3)] #Then let's get a representation of the entire series!
             backward_cells = [tf.nn.rnn_cell.BasicLSTMCell(config.lstm_size) for i in range(3)] #With a 3 layer lstm
 
-            outputs, last_for, last_back = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(forward_cells, backward_cells, res3, 
+            outputs, last_for, last_back = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(forward_cells, backward_cells, res3_drop, 
                 sequence_length=self.sig_length, dtype=tf.float32)
             c_for, h_for, c_back, h_back = last_for[2].c, last_for[2].h, last_back[2].c, last_back[2].h #Grab the last state from the last layer!
             last_encoder_state = tf.contrib.rnn.LSTMStateTuple(tf.concat((c_for, c_back), -1), tf.concat((h_for, h_back), -1))
