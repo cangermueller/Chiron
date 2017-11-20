@@ -115,6 +115,16 @@ class BabyAchilles(seq2seqModel):
         encoding_tup = self.encode('encode')
         self.decode(encoding_tup, helper, 'decode')
 
+class DistractedBabyAchilles(BabyAchilles):
+    def decode(self, encoding_tup, helper, module_scope):
+        with tf.variable_scope(module_scope) as scope:
+            encoding, last_encoder_state = encoding_tup
+            decoder_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=200)
+            decoder = tf.contrib.seq2seq.BasicDecoder(decoder_cell, helper, last_encoder_state, output_layer=core_layers.Dense(6, use_bias=False))
+            outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=config.max_base_len)
+            self.logits = outputs.rnn_output
+            self.predictions = outputs.sample_id
+
 class Achilles(BabyAchilles):
     #3 ResBlock -> 3 stacked BiRNN
     def encode(self, module_scope): 
