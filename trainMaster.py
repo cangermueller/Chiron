@@ -37,20 +37,23 @@ def train(train_model, val_model):
     for i in range(initial_step, config.max_step):
             batch = train_database.get_batch()
             if batch is not None:
+                tic = time.clock()
                 signals, labels, sig_length, base_length = batch
                 if 'Chiron' in config.model:
                     processed_labels = process_labels(labels, base_length)
                     indices, values, shape = batch2sparse(processed_labels)
-                    _, loss_batch, train_summary, predictions = train_sess.run([train_model.opt, train_model.loss, train_model.summary_op, train_model.predictions], 
+                    _, loss_batch, train_summary = train_sess.run([train_model.opt, train_model.loss, train_model.summary_op], 
                     feed_dict={train_model.signals: signals, train_model.y_indices:indices, train_model.y_values:values, train_model.y_shape:shape, train_model.sig_length: sig_length, 
                         train_model.base_length: base_length, train_model.dropout_keep: config.dropout_keep, train_model.is_training:True, train_model.lr:config.lr})
-                    predictions = sparse2dense(predictions)[0]
+                    #predictions = sparse2dense(predictions)[0]
                 else:
-                    _, loss_batch, train_summary, predictions = train_sess.run([train_model.opt, train_model.loss, train_model.summary_op, train_model.predictions], 
+                    _, loss_batch, train_summary = train_sess.run([train_model.opt, train_model.loss, train_model.summary_op], 
                         feed_dict={train_model.signals: signals, train_model.labels: labels, train_model.sig_length: sig_length, 
                             train_model.base_length: base_length, train_model.dropout_keep: config.dropout_keep, train_model.is_training:True, train_model.lr:config.lr})
-                if config.verbose or config.print_every % i == 0:
+                toc = time.clock()
+                if config.verbose or i % config.print_every == 0:
                     print 'Batch Loss is ', loss_batch 
+                    print str(toc - tic) + ' seconds per batch.'
                 #     print predictions[0]
                 #     print labels[0]
                 train_writer.add_summary(train_summary, global_step=i)
@@ -73,9 +76,9 @@ def train(train_model, val_model):
                                 feed_dict={val_model.signals: signals, val_model.labels: labels, val_model.sig_length: sig_length, 
                                 val_model.base_length: base_length, val_model.dropout_keep: 1.0, val_model.is_training:False})
                         val_writer.add_summary(val_summary, global_step=i)
-                        if config.verbose:
-                            print predictions[0]
-                            print labels[0]
+                        # if config.verbose:
+                            # print predictions[0]
+                            # print labels[0]
                         if val_loss_batch < best_val_loss:
                             save_path = val_saver.save(val_sess, os.path.join(config.save_dir, config.model, config.experiment, 'val', str(i)) + '.ckpt')
                             print("Model saved in file: %s" % save_path)
@@ -149,6 +152,9 @@ def main():
     if config.model == 'Chiron_3':
         train_model = chironModels.Chiron_3()
         val_model = chironModels.Chiron_3()
+    if config.model == 'Chiron_5':
+        train_model = chironModels.Chiron_5()
+        val_model = chironModels.Chiron_5()
     if config.train:
         train(train_model, val_model)
     else:
