@@ -1,7 +1,7 @@
 import os
 import tensorflow as tf
 import config
-import tensorflow.contrib.layers as layers
+# import tensorflow.contrib.layers as layers
 from tensorflow.python.layers import core as core_layers
 
 class baseChironModel():
@@ -42,10 +42,12 @@ class baseChironModel():
 
     def train_op(self):
         with tf.variable_scope('train') as scope:
-            params = tf.trainable_variables()
-            gradients = tf.gradients(self.loss, params)
-            clipped_gradients, _ = tf.clip_by_global_norm(gradients, 10)
-            self.opt = tf.train.AdamOptimizer(self.lr).apply_gradients(zip(clipped_gradients, params), global_step=self.global_step)
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            with tf.control_dependencies(update_ops):
+                params = tf.trainable_variables()
+                gradients = tf.gradients(self.loss, params)
+                clipped_gradients, _ = tf.clip_by_global_norm(gradients, 10)
+                self.opt = tf.train.AdamOptimizer(self.lr).apply_gradients(zip(clipped_gradients, params), global_step=self.global_step)
 
     def _summary(self):
         with tf.name_scope("summaries"): #This adds the loss to tensorboard
@@ -69,16 +71,14 @@ class Chiron_3(baseChironModel):
     def encode(self, module_scope):
         with tf.variable_scope(module_scope) as scope:
                 res1 = self.resBlock(tf.expand_dims(self.signals, axis=-1), 'res1') #Lets get a representation of each time step first
-                res1_batch = tf.contrib.layers.batch_norm(res1, center=True, scale=True, is_training=self.is_training, scope='bn1')
+                res1_batch = tf.layers.batch_normalization(res1, axis=-1, center=True, scale=True, training=self.is_training)
                 res2 = self.resBlock(res1_batch, 'res2')
-                res2_batch = tf.contrib.layers.batch_norm(res2, center=True, scale=True, is_training=self.is_training, scope='bn2')
+                res2_batch = tf.layers.batch_normalization(res2, axis=-1, center=True, scale=True, training=self.is_training)            
                 res3 = self.resBlock(res2_batch, 'res3')
-                res3_batch = tf.contrib.layers.batch_norm(res3, center=True, scale=True, is_training=self.is_training, scope='bn3')
-                res3_drop = tf.nn.dropout(res3_batch, self.dropout_keep) #dropout on the last layer to give noisier inputs to rnn
-                                                           
+                res3_batch = tf.layers.batch_normalization(res3, axis=-1, center=True, scale=True, training=self.is_training)
+                res3_drop = tf.nn.dropout(res3_batch, self.dropout_keep) #dropout on the last layer to give noisier inputs to rnn                                    
                 forward_cells = [tf.nn.rnn_cell.BasicLSTMCell(config.lstm_size) for i in range(3)] #Then let's get a representation of the entire series!
                 backward_cells = [tf.nn.rnn_cell.BasicLSTMCell(config.lstm_size) for i in range(3)] #With a 3 layer lstm
-
                 outputs, last_for, last_back = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(forward_cells, backward_cells, res3_drop, 
                     sequence_length=self.sig_length, dtype=tf.float32)
                 outputs_r = tf.reshape(outputs, (-1, 2*config.lstm_size)) #B*T, S
@@ -86,4 +86,5 @@ class Chiron_3(baseChironModel):
                 self.logits = tf.reshape(self.logits, (-1, config.max_seq_len, 5))
     def inference(self):
         self.encode('encode')
-        self.predictions = tf.nn.ctc_greedy_decoder(tf.transpose(self.logits, perm=[1,0,2]), self.sig_length, merge_repeated = True)
+        # self.predictions = tf.nn.ctc_greedy_decoder(tf.transpose(self.logits, perm=[1,0,2]), self.sig_length, merge_repeated = False)
+        self.predictions = tf.nn.ctc_beam_search_decoder(tf.transpose(self.logits, perm=[1,0,2]), self.sig_length, merge_repeated = False, beam_width=3)
