@@ -148,6 +148,9 @@ def main():
     if config.model == 'Chiron_3':
         train_model = chironModels.Chiron_3()
         val_model = chironModels.Chiron_3()
+    if config.model == 'Chiron_5':
+        train_model = chironModels.Chiron_5()
+        val_model = chironModels.Chiron_5()
     if config.train:
         train(train_model, val_model)
     else:
