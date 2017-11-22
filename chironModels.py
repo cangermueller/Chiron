@@ -88,3 +88,29 @@ class Chiron_3(baseChironModel):
         self.encode('encode')
         # self.predictions = tf.nn.ctc_greedy_decoder(tf.transpose(self.logits, perm=[1,0,2]), self.sig_length, merge_repeated = False)
         self.predictions = tf.nn.ctc_beam_search_decoder(tf.transpose(self.logits, perm=[1,0,2]), self.sig_length, merge_repeated = False, beam_width=3)
+
+class Chiron_5(baseChironModel):
+    def encode(self, module_scope):
+        with tf.variable_scope(module_scope) as scope:
+                res1 = self.resBlock(tf.expand_dims(self.signals, axis=-1), 'res1') #Lets get a representation of each time step first
+                res1_batch = tf.layers.batch_normalization(res1, axis=-1, center=True, scale=True, training=self.is_training)
+                res2 = self.resBlock(res1_batch, 'res2')
+                res2_batch = tf.layers.batch_normalization(res2, axis=-1, center=True, scale=True, training=self.is_training)            
+                res3 = self.resBlock(res2_batch, 'res3')
+                res3_batch = tf.layers.batch_normalization(res3, axis=-1, center=True, scale=True, training=self.is_training)
+                res4 = self.resBlock(res3_batch, 'res4')
+                res4_batch = tf.layers.batch_normalization(res4, axis=-1, center=True, scale=True, training=self.is_training)
+                res5 = self.resBlock(res4_batch, 'res5')
+                res5_batch = tf.layers.batch_normalization(res5, axis=-1, center=True, scale=True, training=self.is_training)
+                res5_drop = tf.nn.dropout(res5_batch, self.dropout_keep) #dropout on the last layer to give noisier inputs to rnn                                    
+                forward_cells = [tf.nn.rnn_cell.BasicLSTMCell(config.lstm_size) for i in range(3)] #Then let's get a representation of the entire series!
+                backward_cells = [tf.nn.rnn_cell.BasicLSTMCell(config.lstm_size) for i in range(3)] #With a 3 layer lstm
+                outputs, last_for, last_back = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(forward_cells, backward_cells, res5_drop, 
+                    sequence_length=self.sig_length, dtype=tf.float32)
+                outputs_r = tf.reshape(outputs, (-1, 2*config.lstm_size)) #B*T, S
+                self.logits = tf.layers.dense(outputs_r, 5)
+                self.logits = tf.reshape(self.logits, (-1, config.max_seq_len, 5))
+    def inference(self):
+        self.encode('encode')
+        # self.predictions = tf.nn.ctc_greedy_decoder(tf.transpose(self.logits, perm=[1,0,2]), self.sig_length, merge_repeated = False)
+        self.predictions = tf.nn.ctc_beam_search_decoder(tf.transpose(self.logits, perm=[1,0,2]), self.sig_length, merge_repeated = False, beam_width=3)
