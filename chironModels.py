@@ -38,7 +38,8 @@ class baseChironModel():
     def _loss(self):
         with tf.variable_scope('loss') as scope:
             labels = tf.SparseTensor(self.y_indices, self.y_values, self.y_shape)
-            self.loss = tf.reduce_mean(tf.nn.ctc_loss(labels, self.logits, self.sig_length, preprocess_collapse_repeated=False, ctc_merge_repeated=False, time_major=False))
+            self.loss = tf.reduce_mean(tf.nn.ctc_loss(labels, self.logits, self.sig_length, 
+                preprocess_collapse_repeated=False, ctc_merge_repeated=False, time_major=False))
 
     def train_op(self):
         with tf.variable_scope('train') as scope:
@@ -87,7 +88,8 @@ class Chiron_3(baseChironModel):
     def inference(self):
         self.encode('encode')
         # self.predictions = tf.nn.ctc_greedy_decoder(tf.transpose(self.logits, perm=[1,0,2]), self.sig_length, merge_repeated = False)
-        self.predictions = tf.nn.ctc_beam_search_decoder(tf.transpose(self.logits, perm=[1,0,2]), self.sig_length, merge_repeated = False, beam_width=3)
+        self.predictions = tf.nn.ctc_beam_search_decoder(tf.transpose(self.logits, perm=[1,0,2]),
+            self.sig_length, merge_repeated = False, beam_width=3)
 
 class Chiron_5(baseChironModel):
     def encode(self, module_scope):
@@ -113,4 +115,7 @@ class Chiron_5(baseChironModel):
     def inference(self):
         self.encode('encode')
         # self.predictions = tf.nn.ctc_greedy_decoder(tf.transpose(self.logits, perm=[1,0,2]), self.sig_length, merge_repeated = False)
-        self.predictions = tf.nn.ctc_beam_search_decoder(tf.transpose(self.logits, perm=[1,0,2]), self.sig_length, merge_repeated = False, beam_width=3)
+        self.predictions = tf.nn.ctc_beam_search_decoder(tf.transpose(self.logits, perm=[1,0,2]), 
+            self.sig_length, merge_repeated = False, beam_width=3)
+
+

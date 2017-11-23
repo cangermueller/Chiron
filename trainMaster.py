@@ -9,7 +9,7 @@ import h5py
 import config
 import seq2seqModels
 import chironModels
-from utils import Database, batch2sparse, sparse2dense, process_labels
+from utils import Database, batch2sparse, sparse2dense, process_labels, yianniSparse2Dense
 
 def train(train_model, val_model):
     train_database = Database(config.train_database)
@@ -100,39 +100,58 @@ def pred(model):
     model.build_val_graph()
     test_database = Database(config.test_database)
     pred_database = h5py.File(config.predictions_database, 'w')
-    pred_database.create_dataset('predicted_bases', (len(list(test_database.data['signals'])),), dtype='S300')
-    pred_database.create_dataset('file_names', (len(list(test_database.data['signals'])),), dtype='S200') #Hopefully files aren't > 200 characters...
+    pred_database.create_dataset('predicted_bases', (test_database.data['signals'].shape[0],), dtype='S300')
+    pred_database.create_dataset('file_names', (test_database.data['signals'].shape[0],), dtype='S200') #Hopefully files aren't > 200 characters...
     pred_database['file_names'][:] = test_database.data['file_names']
-    if len(list(test_database.data['signals'])) % config.batch != 0:
+    if test_database.data['signals'].shape[0]  % config.batch != 0:
         print 'If signals is not divisible by batch size, you are going to have a bad time.'
-        print len(list(test_database.data['signals']))
+        print test_database.data['signals'].shape[0]
         return
     saver = tf.train.Saver()
     predictions = []
+    #print len(test_database.data['signals'])
     with tf.Session() as sess:
         ckpt = tf.train.get_checkpoint_state(os.path.dirname(os.path.join(config.save_dir, config.model, config.experiment, 'val') + '/checkpoint'))
         if ckpt and ckpt.model_checkpoint_path:
             saver.restore(sess, ckpt.model_checkpoint_path)
             print 'Restored model from folder ' + ckpt.model_checkpoint_path
+        counter = 0
         while True:
             batch = test_database.get_batch()
+            if counter % 100 == 0:
+                print counter
             if batch is not None:
                 signals, _, sig_length, _ = batch
                 if len(signals) != config.batch: #We really need exactly batch number of samples
+                    print 'One of the batches was not batch size'
                     continue
                 if 'Chiron' in config.model:
                     batch_predictions = sess.run([model.predictions], 
                         feed_dict={model.signals: signals, model.sig_length: sig_length, model.dropout_keep: 1.0, model.is_training:False})[0]
-                    batch_predictions = sparse2dense(batch_predictions)[0]
-                    batch_predictions = [''.join(str(s) for s in pred.tolist()) for pred in batch_predictions[0]]
+                    #batch_predictions1 = sparse2dense(batch_predictions)[0]
+                    #batch_predictions2 = [''.join(str(s) for s in pred.tolist()) for pred in batch_predictions1[0]]
+                    #print batch_predictions
+                    batch_predictions = yianniSparse2Dense(batch_predictions[0])
+                    if len(batch_predictions) != 291:
+                        print 'adfasdf'
+                        print batch_predictions
+                        print len(batch_predictions)
+                        #print batch_predictions[0]
+                        #print batch_predictions1
+                        #print batch_predictions2
+                        #print len(batch_predictions1[0])
+                        #print len(batch_predictions2)
                 else:
                     batch_predictions = sess.run([model.predictions], 
                         feed_dict={model.signals: signals, model.sig_length: sig_length, model.dropout_keep: 1.0, model.is_training:False})[0].tolist()
                     batch_predictions = [''.join(str(s) for s in pred) for pred in batch_predictions]
                 predictions += batch_predictions
+                counter += 1
             else:
                 print 'All done predicting'
                 break
+    #print predictions
+    #print len(predictions)
     pred_database['predicted_bases'][:] = np.asarray(predictions, dtype=np.string_)
     test_database.close()
     pred_database.close()
