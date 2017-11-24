@@ -12,12 +12,13 @@ class Database:
     def __init__(self, f):
         self.data = h5py.File(f, 'r')
         self.batch_num = 0
+        print self.data['base_lengths'].shape[0]
         # self.ind = np.arange(self.data['base_lengths'].shape[0])
         # np.random.shuffle(self.ind)
 
     def get_batch(self):
         batch_num = self.batch_num
-        if batch_num * config.batch + config.batch <= len(self.data['base_lengths']):
+        if batch_num * config.batch + config.batch <= self.data['base_lengths'].shape[0]:
             base_lengths = self.data['base_lengths'][batch_num*config.batch: batch_num*config.batch+config.batch]
             signal_lengths = self.data['signal_lengths'][batch_num*config.batch: batch_num*config.batch+config.batch]
             signals = self.data['signals'][batch_num*config.batch: batch_num*config.batch+config.batch, :]
@@ -34,7 +35,32 @@ class Database:
 
     def close(self):
         self.data.close()
-
+        
+def yianniSparse2Dense(prediction):
+    prediction = prediction[0]
+    indices = prediction.indices
+    values = prediction.values
+    output = ['' for j in range(config.batch)]
+    indices = indices.tolist()
+    values = values.tolist()
+    current_example = 0
+    current_strand = ''
+    #check = []
+    #for i in indices:
+    #    if i[0] not in check:
+    #        check.append(i[0])
+    #if len(check) != 291:
+    #    print len(check)
+    for i in range(len(indices)):
+        if current_example == indices[i][0]:
+            current_strand += str(values[i])
+        else:
+            output[current_example - 1] = current_strand
+            current_strand = str(values[i])
+            current_example = indices[i][0]
+    output[current_example - 1] = current_strand
+    return output
+        
 #From chiron_input.py
 def batch2sparse(label_batch):
     """Transfer a batch of label to a sparse tensor"""

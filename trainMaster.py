@@ -9,11 +9,11 @@ import h5py
 import config
 import seq2seqModels
 import chironModels
-from utils import Database, batch2sparse, sparse2dense, process_labels
+from utils import Database, batch2sparse, sparse2dense, process_labels, yianniSparse2Dense
 
 def train(train_model, val_model):
-    train_database = Database('train.hdf5')
-    val_database = Database('val.hdf5')
+    train_database = Database(config.train_database)
+    val_database = Database(config.val_database)
     best_val_loss = 1000.0
     train_graph = tf.Graph()
     val_graph = tf.Graph()
@@ -37,20 +37,23 @@ def train(train_model, val_model):
     for i in range(initial_step, config.max_step):
             batch = train_database.get_batch()
             if batch is not None:
+                tic = time.clock()
                 signals, labels, sig_length, base_length = batch
                 if 'Chiron' in config.model:
                     processed_labels = process_labels(labels, base_length)
                     indices, values, shape = batch2sparse(processed_labels)
-                    _, loss_batch, train_summary, predictions = train_sess.run([train_model.opt, train_model.loss, train_model.summary_op, train_model.predictions], 
+                    _, loss_batch, train_summary = train_sess.run([train_model.opt, train_model.loss, train_model.summary_op], 
                     feed_dict={train_model.signals: signals, train_model.y_indices:indices, train_model.y_values:values, train_model.y_shape:shape, train_model.sig_length: sig_length, 
                         train_model.base_length: base_length, train_model.dropout_keep: config.dropout_keep, train_model.is_training:True, train_model.lr:config.lr})
-                    predictions = sparse2dense(predictions)[0]
+                    #predictions = sparse2dense(predictions)[0]
                 else:
-                    _, loss_batch, train_summary, predictions = train_sess.run([train_model.opt, train_model.loss, train_model.summary_op, train_model.predictions], 
+                    _, loss_batch, train_summary = train_sess.run([train_model.opt, train_model.loss, train_model.summary_op], 
                         feed_dict={train_model.signals: signals, train_model.labels: labels, train_model.sig_length: sig_length, 
                             train_model.base_length: base_length, train_model.dropout_keep: config.dropout_keep, train_model.is_training:True, train_model.lr:config.lr})
-                if config.verbose or config.print_every % i == 0:
+                toc = time.clock()
+                if config.verbose or i % config.print_every == 0:
                     print 'Batch Loss is ', loss_batch 
+                    print str(toc - tic) + ' seconds per batch.'
                 #     print predictions[0]
                 #     print labels[0]
                 train_writer.add_summary(train_summary, global_step=i)
@@ -73,9 +76,9 @@ def train(train_model, val_model):
                                 feed_dict={val_model.signals: signals, val_model.labels: labels, val_model.sig_length: sig_length, 
                                 val_model.base_length: base_length, val_model.dropout_keep: 1.0, val_model.is_training:False})
                         val_writer.add_summary(val_summary, global_step=i)
-                        if config.verbose:
-                            print predictions[0]
-                            print labels[0]
+                        # if config.verbose:
+                            # print predictions[0]
+                            # print labels[0]
                         if val_loss_batch < best_val_loss:
                             save_path = val_saver.save(val_sess, os.path.join(config.save_dir, config.model, config.experiment, 'val', str(i)) + '.ckpt')
                             print("Model saved in file: %s" % save_path)
@@ -93,45 +96,65 @@ def train(train_model, val_model):
     train_database.close()
     val_database.close()
 
-# def pred(model):
-#     model.build_val_graph()
-#     test_database = Database('val.hdf5')
-#     if len(list(test_database.data['signals'])) % config.batch != 0:
-#         print 'If signals is not divisible by batch size, you are going to have a bad time.'
-#         print len(list(test_database.data['signals']))
-#         return
-#     saver = tf.train.Saver()
-#     predictions = []
-#     with tf.Session() as sess:
-#         sess.run(tf.global_variables_initializer())
-#         ckpt = tf.train.get_checkpoint_state(os.path.dirname(os.path.join(config.save_dir, config.model, config.experiment, 'val') + '/checkpoint'))
-#         if ckpt and ckpt.model_checkpoint_path:
-#             saver.restore(sess, ckpt.model_checkpoint_path)
-#             print 'Restored model from folder ' + ckpt.model_checkpoint_path
-#         while True:
-#             batch = test_database.get_batch()
-#             if batch is not None:
-#                 signals, _, sig_length, _ = batch
-#                 if len(signals) != config.batch: #We really need exactly batch number of samples
-#                     continue
-#                 if 'Chiron' in config.model:
-#                     batch_predictions = sess.run([model.predictions], 
-#                         feed_dict={model.signals: signals, model.sig_length: sig_length, model.dropout_keep: 1.0, model.is_training:False})[0]
-#                     batch_predictions = sparse2dense(batch_predictions)[0]
-#                     print batch_predictions
-#                 else:
-#                     batch_predictions = sess.run([model.predictions], 
-#                         feed_dict={model.signals: signals, model.sig_length: sig_length, model.dropout_keep: 1.0, model.is_training:False})[0].tolist()
-#                     print batch_predictions
-#                 predictions += batch_predictions
-#             else:
-#                 print 'All done predicting'
-#                 break
-
-#     for i in range(len(pred_files)):
-#         with open(os.path.join(config.pred_output_dir, os.path.basename(pred_files[i])), 'w') as f:
-#             f.write(str(predictions[i])[1: -1])
-#     test_database.close()
+def pred(model):
+    model.build_val_graph()
+    test_database = Database(config.test_database)
+    pred_database = h5py.File(config.predictions_database, 'w')
+    pred_database.create_dataset('predicted_bases', (test_database.data['signals'].shape[0],), dtype='S300')
+    pred_database.create_dataset('file_names', (test_database.data['signals'].shape[0],), dtype='S200') #Hopefully files aren't > 200 characters...
+    pred_database['file_names'][:] = test_database.data['file_names']
+    if test_database.data['signals'].shape[0]  % config.batch != 0:
+        print 'If signals is not divisible by batch size, you are going to have a bad time.'
+        print test_database.data['signals'].shape[0]
+        return
+    saver = tf.train.Saver()
+    predictions = []
+    #print len(test_database.data['signals'])
+    with tf.Session() as sess:
+        ckpt = tf.train.get_checkpoint_state(os.path.dirname(os.path.join(config.save_dir, config.model, config.experiment, 'val') + '/checkpoint'))
+        if ckpt and ckpt.model_checkpoint_path:
+            saver.restore(sess, ckpt.model_checkpoint_path)
+            print 'Restored model from folder ' + ckpt.model_checkpoint_path
+        counter = 0
+        while True:
+            batch = test_database.get_batch()
+            if counter % 100 == 0:
+                print counter
+            if batch is not None:
+                signals, _, sig_length, _ = batch
+                if len(signals) != config.batch: #We really need exactly batch number of samples
+                    print 'One of the batches was not batch size'
+                    continue
+                if 'Chiron' in config.model:
+                    batch_predictions = sess.run([model.predictions], 
+                        feed_dict={model.signals: signals, model.sig_length: sig_length, model.dropout_keep: 1.0, model.is_training:False})[0]
+                    #batch_predictions1 = sparse2dense(batch_predictions)[0]
+                    #batch_predictions2 = [''.join(str(s) for s in pred.tolist()) for pred in batch_predictions1[0]]
+                    #print batch_predictions
+                    batch_predictions = yianniSparse2Dense(batch_predictions[0])
+                    if len(batch_predictions) != 291:
+                        print 'adfasdf'
+                        print batch_predictions
+                        print len(batch_predictions)
+                        #print batch_predictions[0]
+                        #print batch_predictions1
+                        #print batch_predictions2
+                        #print len(batch_predictions1[0])
+                        #print len(batch_predictions2)
+                else:
+                    batch_predictions = sess.run([model.predictions], 
+                        feed_dict={model.signals: signals, model.sig_length: sig_length, model.dropout_keep: 1.0, model.is_training:False})[0].tolist()
+                    batch_predictions = [''.join(str(s) for s in pred) for pred in batch_predictions]
+                predictions += batch_predictions
+                counter += 1
+            else:
+                print 'All done predicting'
+                break
+    #print predictions
+    #print len(predictions)
+    pred_database['predicted_bases'][:] = np.asarray(predictions, dtype=np.string_)
+    test_database.close()
+    pred_database.close()
 
 def main():
     train_model = None
