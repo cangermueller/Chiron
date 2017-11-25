@@ -25,8 +25,6 @@ test_database = './val.hdf5'
 predictions_database = pred_output_dir + '/' + model + experiment + 'predictions.hdf5'
 test_label_file = 'val_labels.csv'
 
-gold_labels_dir = './gold_labels'
-gold_labels_file = gold_labels_dir + '/' + model + '_' + experiment + '_gold.csv'
 pred_labels_file = pred_output_dir + '/' + model + '_' + experiment + '_predictions.csv'
 
 stats_dir = './stats'

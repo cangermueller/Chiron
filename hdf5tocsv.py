@@ -32,14 +32,6 @@ def getPreds(file):
         writer.writerows(zip(files, strand))
 
 def main():
-    # Create path to prediction labels file if necessary
-    if not os.path.exists(os.path.dirname(config.pred_labels_file)):
-        try:
-            os.makedirs(os.path.dirname(config.pred_labels_file))
-        except OSError as exc: # Guard against race condition
-            if exc.errno != errno.EEXIST:
-                raise
-
     getPreds(config.predictions_database)
 
 main()

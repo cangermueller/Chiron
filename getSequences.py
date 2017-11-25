@@ -2,7 +2,6 @@ import csv
 import config
 from glob import glob
 import os
-import errno
 
 def baseIndex(base):
     bases = ['a', 'c', 't', 'g']
@@ -27,14 +26,6 @@ def write_labels(label_files):
         writer.writerows(zip(base_names, strands))
 
 def main():
-    # Create path to gold labels if necessary
-    if not os.path.exists(os.path.dirname(config.gold_labels_file)):
-        try:
-            os.makedirs(os.path.dirname(config.gold_labels_file))
-        except OSError as exc: # Guard against race condition
-            if exc.errno != errno.EEXIST:
-                raise
-
     label_files = glob(os.path.join(config.data_read_dir, '*.label'))
     ecoli, phage, human = [], [], []
     for s in label_files:

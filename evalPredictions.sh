@@ -9,10 +9,13 @@ python trainMaster.py
 echo "--Writing predictions to CSV"
 python hdf5tocsv.py
 
-# Get CSV of gold labels
+# Get CSV of gold labels if necessary
 # NOTE: set the 'data_read_dir' variable in config to val!
-echo "--Writing gold labels to CSV"
-python getSequences.py
+gold_labels_file="val_labels.csv"
+if ! [ -e "$gold_labels_file" ]; then
+	echo "--Writing gold labels to CSV"
+	python getSequences.py
+fi
 
 # Analyze predictions
 echo "--Analyzing predictions"
