@@ -109,9 +109,11 @@ def main():
     phage = sorted(phage)
     human = sorted(human)
     print len(ecoli), len(phage), len(human)
-    # signal_files = ecoli[:2000] + phage[:2000] #This this to get a larger subset of the data
-    signal_files = sorted(signal_files)
-    signal_files = signal_files[:10] #I am just using a subset of the dataset for experimentation
+    if config.large:
+        signal_files = ecoli[:2000] + phage[:2000] #This this to get a larger subset of the data
+    else:
+        signal_files = sorted(signal_files)
+        signal_files = signal_files[:10] #I am just using a subset of the dataset for experimentation
     readAllFiles(signal_files)
 
 main()

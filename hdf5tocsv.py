@@ -2,6 +2,7 @@ import h5py
 import config
 import os
 import csv
+import errno
 
 def getPreds(file):
     pred_database = h5py.File(file, 'r')
@@ -25,12 +26,20 @@ def getPreds(file):
             current_file = pred_database['file_names'][i]
     strand.append(total_pred_strand)
     files.append(current_file)
-    with open(config.pred_output_dir + '/' + config.model + config.experiment + 'predictions.csv', 'w') as f:
+    with open(config.pred_labels_file, 'w') as f:
         writer = csv.writer(f)
         print len(zip(files, strand))
         writer.writerows(zip(files, strand))
 
 def main():
+    # Create path to prediction labels file if necessary
+    if not os.path.exists(os.path.dirname(config.pred_labels_file)):
+        try:
+            os.makedirs(os.path.dirname(config.pred_labels_file))
+        except OSError as exc: # Guard against race condition
+            if exc.errno != errno.EEXIST:
+                raise
+
     getPreds(config.predictions_database)
 
 main()

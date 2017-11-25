@@ -5,8 +5,10 @@
 # data_write_dir = './171016_large/train_parsed'
 # pred_dir = data_val_dir
 
-model = 'Chiron_3'
+model = 'Achilles'
 experiment = '1'
+
+large = False # Use 'full' dataset or just testing stuff?
 
 data_train_dir = './171016_large/train_parsed'
 data_val_dir = './171016_large/val_parsed'
@@ -23,19 +25,26 @@ test_database = './val.hdf5'
 predictions_database = pred_output_dir + '/' + model + experiment + 'predictions.hdf5'
 test_label_file = 'val_labels.csv'
 
+gold_labels_dir = './gold_labels'
+gold_labels_file = gold_labels_dir + '/' + model + '_' + experiment + '_gold.csv'
+pred_labels_file = pred_output_dir + '/' + model + '_' + experiment + '_predictions.csv'
+
+stats_dir = './stats'
+stats_file = stats_dir + '/' + model + '_' + experiment + '_' + 'stats.txt'
+
 max_seq_len = 300
 max_base_len = 75
 
 lstm_size = 200
 dropout_keep = .8
 
-train = True #Do you want to train or pred?
-batch = 200
-max_step = 30000
+train = False #Do you want to train or pred?
+batch = 213
+max_step = 10
 lr = .001
 val_every = 5
 restart = True #If false then it restores the model from the ckpt file specified in save_dir
 
 normalize = True #Honestly don't know what to do about this one...
-verbose = True
+verbose = False
 print_every = 100

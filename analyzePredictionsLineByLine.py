@@ -3,6 +3,8 @@ import Bio
 from Bio import pairwise2
 import config
 import h5py
+import os
+import errno
 
 def calculate_stats(str1, str2):
     if len(str1) == 0:
@@ -40,12 +42,21 @@ def getStatsLineByLine():
         all_stats.append(stats)
     all_stats = np.asarray(all_stats)
     av_stats = np.mean(all_stats, axis=0)
-    with open('stats.txt', 'w') as f:
+    with open(config.stats_file, 'w') as f:
+        f.write("identity, mismatch, deletion, insertion, edit distance\n")
         f.write(str(av_stats.tolist())[1:-1])
     pred.close()
     test.close()
 
 def main():
+    # Create path to stats file if necessary
+    if not os.path.exists(os.path.dirname(config.stats_file)):
+        try:
+            os.makedirs(os.path.dirname(config.stats_file))
+        except OSError as exc: # Guard against race condition
+            if exc.errno != errno.EEXIST:
+                raise
+
     getStatsLineByLine()
 
 main()
