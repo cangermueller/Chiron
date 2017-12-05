@@ -1,77 +1,58 @@
-import numpy as np
-import h5py
-from glob import glob
+import subprocess
+import glob
 import os
-import Bio
-from Bio import pairwise2
-import nltk
-from nltk import metrics
-from nltk.metrics import edit_distance
-import csv
 import config
+import numpy as np
 
-def get_true_strands():
-    data = {}
-    with open(config.test_label_file, 'r') as f:
-        reader = csv.reader(f)
-        for row in reader:
-            data[row[0]] = row[1]
-    return data
-
-def calculate_stats(str1, str2):
-    reflen = len(str2)
-    alignment = pairwise2.align.globalms(str1, str2, 2, -1, -.5, -.1)[0]
-    al1, al2, score, begin, end = alignment
-    identity, mismatch, deletion, insertion = 0.0, 0.0, 0.0, 0.0
-    for i in range(len(al1)):
-        if al1[i] != '-' and al2[i] != '-':
-            if al1[i] == al2[i]:
-                identity += 1.0
-            else:
-                mismatch += 1.0
-        else:
-            if al1[i] == '-':
-                deletion += 1.0
-            elif al2[i] == '-':
-                insertion += 1.0
-    ed = edit_distance(al1, al2)
-    return identity / reflen, mismatch / reflen, deletion / reflen, insertion / reflen, 1.0*ed / reflen
-
-def process_predictions(true_strands):
-    pred_database = h5py.File(config.predictions_database, 'r')
-    current_pred_strand, total_pred_strand = '', ''
-    current_file = pred_database['file_names'][0]
-    true_strand = true_strands[current_file]
-    stats = []
-    counter = 0
-    for i in range(pred_database['predicted_bases'].shape[0]):
-        if current_file == pred_database['file_names'][i]: #We are still on the same read
-            current_pred_strand = pred_database['predicted_bases'][i]
-            total_pred_strand += current_pred_strand
-        else: #We are done predicting a given run...
-           # print total_pred_strand, true_strand
-            if counter % 10 == 0:
-                print counter
-            print counter
-            counter += 1
-            identity, mismatch, deletion, insertion, ed = calculate_stats(total_pred_strand, true_strand)
-            stats.append([identity, mismatch, deletion, insertion, ed])
-            current_pred_strand = pred_database['predicted_bases'][i]
-            total_pred_strand += current_pred_strand
-            if i != pred_database['predicted_bases'].shape[0] - 1:
-                current_file = pred_database['file_names'][i+1]
-                true_strand = true_strands[current_file]
-            #print identity, mismatch, deletion, insertion, ed
-    identity, mismatch, deletion, insertion, ed = calculate_stats(current_pred_strand, true_strand)
-    stats.append([identity, mismatch, deletion, insertion, ed])
-    stats = np.asarray(stats, dtype=float32)
-    print len(stats), pred_database['predicted_bases'].shape[0]
-    av_stats = np.mean(stats, axis=0)
-    return av_stats
+def getStats(file):
+    with open(file, 'r') as f:
+        lines = [line.strip() for line in f]
+        delRate, insRate, misRate, idRate = 0.0, 0.0, 0.0, 0.0
+        for i in range(len(lines)):
+            if lines[i][0] == '=': #First line of summary starts with =
+                total_reads = lines[i+1].split(':')[1]
+                unaligned = lines[i+2].split(':')[1].strip()
+                if unaligned == '0': #Should have aligned everything
+                    delRate = lines[i+3].split(':')[1]
+                    insRate = lines[i+4].split(':')[1]
+                    misRate = lines[i+5].split(':')[1]
+                    idRate = lines[i+6].split(':')[1]
+                break
+        return delRate, insRate, misRate, idRate
 
 def main():
-    true_strands = get_true_strands()
-    av_stats = process_predictions(true_strands)
-    print av_stats
+    reference_sequences = glob.glob(os.path.join(config.test_label_folder, '*.fa'))
+    aligned_stats = []
+    unaligned_stats = []
+    unaligned = 0
+    for i, seq in enumerate(reference_sequences):
+        if i % 100 == 0:
+            print i
+        prediction_file = config.predictions_fasta_folder + '/' + os.path.basename(seq)[:-2] + 'fasta'
+        if not os.path.exists(config.predictions_bam_folder):
+            os.makedirs(config.predictions_bam_folder)
+        alignment_file = config.predictions_bam_folder + '/' + os.path.basename(seq)[:-2] + 'sam'
+        with open(alignment_file, 'w') as f:
+            subprocess.call(['minimap2', '-a', '-k6', '-w4', seq, prediction_file], stdout=f) #align
+        with open(alignment_file[:-3] + 'bam', 'w') as f:
+            subprocess.call(['samtools', 'view', '-bS', alignment_file], stdout=f) #convert to bam
+        subprocess.call(['rm', alignment_file]) #get rid of sam file but keep bam file
+        with open('jsaStats.txt', 'w') as f:
+            subprocess.call(['jsa.hts.errorAnalysis', '-reference=' + seq, '-bamFile=' + alignment_file[:-3] + 'bam'], stdout=f)
+        delRate, insRate, misRate, idRate = getStats('jsaStats.txt')
+        subprocess.call(['rm', 'jsaStats.txt'])
+        if idRate == 0.0:
+            unaligned += 1
+            unaligned_stats.append([delRate, insRate, misRate, idRate])
+        else:
+            unaligned_stats.append([delRate, insRate, misRate, idRate])
+            aligned_stats.append([delRate, insRate, misRate, idRate])
+    aligned_stats = np.asarray(aligned_stats, dtype=np.float32)
+    unaligned_stats = np.asarray(unaligned_stats, dtype=np.float32)
+    av_aligned_stats = np.mean(aligned_stats, axis=0)
+    av_unaligned_stats = np.mean(unaligned_stats, axis=0)
+    print av_aligned_stats
+    print av_unaligned_stats
+    print unaligned
 
 main()
