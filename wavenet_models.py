@@ -36,7 +36,6 @@ def causal_conv(tensor, filters=256, kernel_size=2, dilation=1,
         # preserve causality by padding beforehand
         causal_padding = int(kernel_size - 1) * dilation
         padded = tf.pad(tensor, [[0, 0], [causal_padding, 0], [0, 0]])
-        '''
         if dilation > 1:
             dilated = causal_transform(padded, dilation=dilation)
             dilated_conv = tf.layers.conv1d(dilated,
@@ -64,6 +63,7 @@ def causal_conv(tensor, filters=256, kernel_size=2, dilation=1,
                                     activation=activation,
                                     use_bias=use_bias,
                                     )#name='dilation-{}'.format(dilation))
+        '''
                                  
         # Add additional shape information.
         cropped = tf.slice(restored,
