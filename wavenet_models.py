@@ -247,12 +247,14 @@ class Poseidon(object):
             out = tf.tanh(conv_filter) * tf.sigmoid(conv_gate)
             residual = tf.layers.conv1d(out,
                                         self.residual_filters, 1,
+                                        strides=1, padding='SAME',
                                         activation=self.activation,
                                         use_bias=self.use_bias,
                                         name='residual')
             # are these just the same if residual_filters = skip_filters? 
             skip_connection = tf.layers.conv1d(out,
-                                               self.skip_filters, 1,
+                                               self.skip_filters, 1,                                   
+                                               strides=1, padding='SAME',
                                                activation=self.activation,
                                                use_bias=self.use_bias,
                                                name='skip_connection')
@@ -287,11 +289,13 @@ class Poseidon(object):
                 conv_1 = tf.layers.conv1d(activated_1,
                                           filters=self.skip_filters,
                                           kernel_size=1, activation=None,
+                                          strides=1, padding='SAME',
                                           use_bias=self.use_bias)
                 activated_2 = self.activation(conv_1)
                 conv_2 = tf.layers.conv1d(activated_2,
                                 filters=self.filters, #quantization_filters,
                                 kernel_size=1, activation=None,
+                                strides=1, padding='SAME',
                                 use_bias=self.use_bias)
         return conv_2
 
