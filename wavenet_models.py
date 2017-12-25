@@ -45,7 +45,7 @@ def causal_conv(tensor, filters=256, kernel_size=2, dilation=1,
                                             activation=activation,
                                             use_bias=use_bias)
             restored = causal_restore(dilated_conv, dilation=dilation) 
-        else
+        else:
             # no dilations
             restored = tf.layers.conv1d(padded,
                                         filters=filters, 
