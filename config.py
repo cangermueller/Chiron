@@ -5,8 +5,8 @@
 # data_write_dir = './171016_large/train_parsed'
 # pred_dir = data_val_dir
 
-model = 'Achilles'
-experiment = '1'
+model = 'Poseidon'
+experiment = 'exp0'
 
 large = False # Use 'full' dataset or just testing stuff?
 
@@ -36,13 +36,13 @@ max_base_len = 75
 lstm_size = 200
 dropout_keep = .8
 
-train = False #Do you want to train or pred?
-batch = 213
-max_step = 10
+train = True #Do you want to train or pred?
+batch = 300
+max_step = 5000
 lr = .001
-val_every = 5
+val_every = 50
 restart = True #If false then it restores the model from the ckpt file specified in save_dir
 
 normalize = True #Honestly don't know what to do about this one...
-verbose = False
+verbose = True
 print_every = 100
