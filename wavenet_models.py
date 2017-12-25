@@ -198,8 +198,6 @@ class Poseidon(object):
             # add some tensor summaries for fun, not really sure what they are tho...
             if self.edit_distances is not None:
                 tf.contrib.layers.summarize_tensor(self.edit_distances, tag="edit_distances")
-            if self.predictions is not None:
-                tf.contrib.layers.summarize_tensor(self.predictions[0][0], tag="predictions")
             #???
             self.summary_op = tf.summary.merge_all()
 
