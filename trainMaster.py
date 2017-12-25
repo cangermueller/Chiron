@@ -41,7 +41,7 @@ def train(train_model, val_model):
             if batch is not None:
                 tic = time.clock()
                 signals, labels, sig_length, base_length = batch
-                if any(_ in config.model for _ in ['Chiron', 'Baseline', 'Poseidon', 'Triton']):
+                if 'y_indices' in dir(val_model):
                     processed_labels = process_labels(labels, base_length)
                     indices, values, shape = batch2sparse(processed_labels)
                     _, loss_batch, train_summary = train_sess.run([train_model.opt, train_model.loss, train_model.summary_op], 
@@ -66,7 +66,7 @@ def train(train_model, val_model):
                     batch = val_database.get_batch()
                     if batch is not None:
                         signals, labels, sig_length, base_length = batch
-                        if any(_ in config.model for _ in ['Chiron', 'Baseline', 'Poseidon', 'Triton']):
+                        if 'y_indices' in dir(val_model):
                             processed_labels = process_labels(labels, base_length)
                             indices, values, shape = batch2sparse(processed_labels)
                             val_loss_batch, val_summary, predictions = val_sess.run([val_model.loss, val_model.summary_op, val_model.predictions], 
@@ -127,7 +127,7 @@ def pred(model):
                 if len(signals) != config.batch: #We really need exactly batch number of samples
                     print 'One of the batches was not batch size'
                     continue
-                if any(_ in config.model for _ in ['Chiron', 'Baseline', 'Poseidon', 'Triton']):
+                if 'y_indices' in dir(val_model):
                     batch_predictions = sess.run([model.predictions], 
                         feed_dict={model.signals: signals, model.sig_length: sig_length, model.dropout_keep: 1.0, model.is_training:False})[0]
                     #batch_predictions1 = sparse2dense(batch_predictions)[0]
