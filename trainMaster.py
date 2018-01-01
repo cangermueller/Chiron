@@ -36,6 +36,12 @@ def train(train_model, val_model):
         train_saver.restore(train_sess, ckpt.model_checkpoint_path)
         print 'Restored model from folder ' + ckpt.model_checkpoint_path
     initial_step = train_model.global_step.eval(session=train_sess)
+    # save train model graphdef
+    with open(train_writer.get_logdir()+'/graphdef.txt', 'w') as f:
+        f.write(str(train_sess.graph.as_graph_def()))
+        print 'Writing train graph_def to file...'
+        print 'path:', f.name
+    train_writer.flush()
     for i in range(initial_step, config.max_step):
             batch = train_database.get_batch()
             if batch is not None:
