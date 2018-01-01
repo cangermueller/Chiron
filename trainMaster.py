@@ -41,7 +41,6 @@ def train(train_model, val_model):
         f.write(str(train_sess.graph.as_graph_def()))
         print 'Writing train graph_def to file...'
         print 'path:', f.name
-    train_writer.flush()
     for i in range(initial_step, config.max_step):
             batch = train_database.get_batch()
             if batch is not None:
