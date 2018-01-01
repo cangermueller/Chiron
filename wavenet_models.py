@@ -130,21 +130,6 @@ class Poseidon(object):
         self.batch_size = batch_size or config.batch
         self.config = config 
         self.verbose = verbose
-
-
-        if self.verbose:
-            print self.__str__()
-            
-
-    def __str__(self):
-        model_ = str(self.__class__).split("'")[1]
-        attrs_ = []
-        for attr_ in self.__dict__.items():
-            if attr_[0].startswith('_'):
-                continue
-            attrs_.append('%s=%s' % attr_)
-        delim = ',\n' + ' ' * (len(model_) + 1)
-        return '%s(%s)' % (model_, delim.join(attrs_))
     
                                
     def create_placeholder(self):
