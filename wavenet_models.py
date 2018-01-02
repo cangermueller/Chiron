@@ -70,7 +70,7 @@ def conv_layer(tensor, filters=256, kernel_size=2,
     '''One dimension convolution helper function.
        Sets variables with good defaults.
     '''   
-    with tf.variable_scope(name) as scope:
+    with tf.variable_scope(name):
         in_channels = tensor.get_shape().as_list()[-1]
         w = tf.get_variable(name='w',
                             shape=(kernel_size, in_channels, filters),
@@ -78,14 +78,14 @@ def conv_layer(tensor, filters=256, kernel_size=2,
                                 stddev=gain / np.sqrt(kernel_size**2 * in_channels)
                             ))
         result = tf.nn.conv1d(tensor, w, stride=strides, padding=padding)
-    if use_bias:
-        b = tf.get_variable(name='b',
-                            shape=(filters, ),
-                            initializer=tf.constant_initializer(0.0))
-        result = result + tf.expand_dims(tf.expand_dims(b, 0), 0)
-    if activation:
-        result = activation(result)
-    return result
+        if use_bias:
+            b = tf.get_variable(name='b',
+                                shape=(filters, ),
+                                initializer=tf.constant_initializer(0.0))
+            result = result + tf.expand_dims(tf.expand_dims(b, 0), 0)
+        if activation:
+            result = activation(result)
+        return result
 
     
 ###############################################################################
@@ -105,9 +105,9 @@ class Poseidon(object):
                  dilation_filters=32,
                  quantization_filters=16,
                  dilation_factor=2, 
-                 activation=tf.nn.relu,
+                 activation=tf.nn.tanh,
+                 use_bias=True, 
                  use_bn=False,
-                 use_bias=False,
                  lstm_cells=3,
                  lstm_size=200,
                  max_seq_len=None,
@@ -182,17 +182,13 @@ class Poseidon(object):
                     zip(clipped_gradients, params),
                     global_step=self.global_step)
 
-    def _summary(self):
-        with tf.name_scope("summaries"): #This adds the loss to tensorboard
-            tf.summary.scalar("loss", self.loss)
-            self.summary_op = tf.summary.merge_all()
-
+   
     def train_summary(self):
         with tf.name_scope("summaries"): #This adds the loss to tensorboard
             tf.summary.scalar("loss", self.loss)
             self.summary_op = tf.summary.merge_all()
 
-    def val_summary(self):
+    def _summary(self):
         with tf.name_scope("summaries"): #This adds the loss to tensorboard
             tf.summary.scalar("loss", self.loss)
             #tf.summary.scalar("error", self.error)
@@ -210,13 +206,13 @@ class Poseidon(object):
         self.inference()
         self._loss()
         self.train_op()
-        self.train_summary()
+        self._summary()
 
     def build_val_graph(self):
         self.create_placeholder()
         self.inference()
         self._loss()
-        self.val_summary()
+        self._summary()
 
      
             
@@ -347,6 +343,7 @@ class Triton(Poseidon):
     '''Wavenet Model with Chiron's cnn stack.
     '''    
     def __init__(self, **kwargs):
+        #kwargs.update(quantization_filters = kwargs.get('filters'))
         Poseidon.__init__(self, **kwargs)
 
     def chiron_block(self, input_batch, name='chiron_block'):

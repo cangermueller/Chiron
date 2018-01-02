@@ -65,7 +65,7 @@ def train(train_model, val_model):
                 #     print labels[0]
                 train_writer.add_summary(train_summary, global_step=i)
                 
-                if i % config.val_every == 0: #Perform a validation every config.val_every batches
+                if i == initial_step or i % config.val_every == 0: #Perform a validation every config.val_every batches
                     save_path = train_saver.save(train_sess, os.path.join(config.save_dir, config.model, config.experiment, 'train', str(i)) + '.ckpt')
                     val_saver.restore(val_sess, save_path)
                     batch = val_database.get_batch()
