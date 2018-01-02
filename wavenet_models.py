@@ -103,6 +103,7 @@ class Poseidon(object):
                  residual_filters=16,
                  skip_filters=16,
                  dilation_filters=32,
+                 quantization_filters=16,
                  dilation_factor=2, 
                  activation=tf.nn.relu,
                  use_bn=False,
@@ -128,6 +129,7 @@ class Poseidon(object):
         self.residual_filters = residual_filters 
         self.skip_filters = skip_filters 
         self.dilation_filters = dilation_filters
+        self.quantization_filters = quantization_filters
         self.dilation_factor = dilation_factor
         
         self.activation = activation
@@ -183,25 +185,39 @@ class Poseidon(object):
     def _summary(self):
         with tf.name_scope("summaries"): #This adds the loss to tensorboard
             tf.summary.scalar("loss", self.loss)
-            tf.summary.scalar("error", self.error)
-            # add some tensor summaries for fun, not really sure what they are tho...
-            if self.edit_distances is not None:
-                tf.contrib.layers.summarize_tensor(self.edit_distances, tag="edit_distances")
-            #???
             self.summary_op = tf.summary.merge_all()
+
+    def train_summary(self):
+        with tf.name_scope("summaries"): #This adds the loss to tensorboard
+            tf.summary.scalar("loss", self.loss)
+            self.summary_op = tf.summary.merge_all()
+
+    def val_summary(self):
+        with tf.name_scope("summaries"): #This adds the loss to tensorboard
+            tf.summary.scalar("loss", self.loss)
+            #tf.summary.scalar("error", self.error)
+            #tf.summary.scalar("mean_edit_distance", self.mean_distances)
+            # add some tensor summaries for fun, not really sure what they are tho...
+            #tf.contrib.layers.summarize_tensor(self.signals, tag="signals")
+            tf.contrib.layers.summarize_tensor(self.logits, tag="logits")
+            tf.contrib.layers.summarize_tensor(self.edit_distances, tag="edit_distances")
+            self.summary_op = tf.summary.merge_all()
+
+           
 
     def build_train_graph(self):
         self.create_placeholder()
         self.inference()
         self._loss()
         self.train_op()
-        self._summary()
+        self.train_summary()
 
     def build_val_graph(self):
         self.create_placeholder()
         self.inference()
         self._loss()
-        self._summary()
+        self.val_summary()
+
      
             
     def inference(self):
@@ -217,11 +233,10 @@ class Poseidon(object):
                 merge_repeated=False, beam_width=3)
             # compute error
             labels = tf.SparseTensor(self.y_indices,self.y_values,self.y_shape)
-            self.edit_distances = tf.edit_distance(
-                tf.to_int32(self.predictions[0][0]), labels,
-                normalize=False)
+            self.predicted_bases = tf.to_int32(self.predictions[0][0])
+            self.edit_distances = tf.edit_distance(self.predicted_bases, labels, normalize=False)
             self.error = tf.reduce_sum(self.edit_distances) / tf.to_float(tf.size(labels.values))
-
+ 
                
     def wavenet_layer(self, layer_input, dilation=1, name='wavenet_layer'):
         """Creates a single Wavenet causal dilated convolution layer."""
@@ -262,48 +277,50 @@ class Poseidon(object):
     def wavenet_stack(self, input_batch, name='wavenet_stack'):
         '''Creates the Wavenet network, and applies to input_batch.
         '''
-        stack_output = 0
-        current_block = input_batch
+        with tf.name_scope(name):
+            stack_output = 0
+            current_block = input_batch
 
-        # 1. preserve causality in signal
-        current_block = causal_conv(current_block,
-                                    self.residual_filters,
-                                    kernel_size=self.kernel_size,
-                                    dilation=1)
-        
-        # 2. collect skip output
-        for b in range(self.blocks):
-            current_block, skip = self.wavenet_block(current_block, name='block-%s'%b)
-            stack_output += skip 
+            # 1. preserve causality in signal
+            current_block = causal_conv(current_block,
+                                        self.residual_filters,
+                                        kernel_size=self.kernel_size,
+                                        dilation=1)
+            
+            # 2. collect skip output
+            for b in range(self.blocks):
+                current_block, skip = self.wavenet_block(current_block, name='block-%s'%b)
+                stack_output += skip 
 
-        # 3. process: (+) -> ReLU -> 1x1 conv -> ReLU -> 1x1 conv
-        active_1 = self.activation(stack_output)
-        conv_1 = conv_layer(active_1,
-                                  filters=self.skip_filters,
-                                  kernel_size=1, activation=None,
-                                  strides=1, padding='SAME',
-                                  use_bias=self.use_bias,
-                                  name='conv_1')
-        active_2 = self.activation(conv_1)
-        conv_2 = conv_layer(active_2,
-                        filters=self.filters, #quantization_filters,
-                        kernel_size=1, activation=None,
-                        strides=1, padding='SAME',
-                        use_bias=self.use_bias,
-                        name='conv_2')
-        return conv_2
+            # 3. process: (+) -> ReLU -> 1x1 conv -> ReLU -> 1x1 conv
+            active_1 = self.activation(stack_output)
+            conv_1 = conv_layer(active_1,
+                                      filters=self.skip_filters,
+                                      kernel_size=1, activation=None,
+                                      strides=1, padding='SAME',
+                                      use_bias=self.use_bias,
+                                      name='conv_1')
+            active_2 = self.activation(conv_1)
+            conv_2 = conv_layer(active_2,
+                            filters=self.quantization_filters,
+                            kernel_size=1, activation=None,
+                            strides=1, padding='SAME',
+                            use_bias=self.use_bias,
+                            name='conv_2')
+            return conv_2
 
     
     def lstm_stack(self, input_batch, name='lstm_stack'):
         '''Create and apply bi-directional LSTM to input batch
         '''
         #  representation of entire series! (with 3-layer lstm)
-        forward_cells = [tf.nn.rnn_cell.BasicLSTMCell(self.lstm_size) for i in range(self.lstm_cells)] 
-        backward_cells = [tf.nn.rnn_cell.BasicLSTMCell(self.lstm_size) for i in range(self.lstm_cells)] 
-        output, last_for, last_back = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
-            forward_cells, backward_cells, input_batch, sequence_length=self.sig_length, dtype=tf.float32)
-        output_rs = tf.reshape(output, (-1, 2*self.lstm_size))
-        return output_rs
+        with tf.name_scope(name):
+            forward_cells = [tf.nn.rnn_cell.BasicLSTMCell(self.lstm_size) for i in range(self.lstm_cells)] 
+            backward_cells = [tf.nn.rnn_cell.BasicLSTMCell(self.lstm_size) for i in range(self.lstm_cells)] 
+            output, last_for, last_back = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
+              forward_cells, backward_cells, input_batch, sequence_length=self.sig_length, dtype=tf.float32)
+            output_rs = tf.reshape(output, (-1, 2*self.lstm_size))
+            return output_rs
 
     
     def encode(self, module_scope):
@@ -348,10 +365,11 @@ class Triton(Poseidon):
             return tf.nn.relu(conv3 + conv1a)
         
     def chiron_stack(self, input_batch, name='chiron_stack'):
-        current_layer = input_batch
-        for b in range(self.blocks):
-            current_layer = self.chiron_block(current_layer, name='res-%d'%b)
-        return current_layer
+        with tf.name_scope(name):
+            current_layer = input_batch
+            for b in range(self.blocks):
+                current_layer = self.chiron_block(current_layer, name='res-%d'%b)
+            return current_layer
 
     
     def encode(self, module_scope):
