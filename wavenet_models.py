@@ -8,37 +8,35 @@ import config
 ###############################################################################
 def causal_transform(tensor, dilation=1, name=None):
     '''Reshape 1d time-series by dialtion, zero-pad if needed'''
-    with tf.name_scope('time_to_batch'):
-        shape = tf.shape(tensor)
-        out_width = tf.to_int32(shape[0] * dilation)
-        _, _, out_channels = tensor.get_shape().as_list()
-        padding = dilation - 1 - (shape[1] + dilation - 1) % dilation
-        padded = tf.pad(tensor, [[0, 0], [0, padding], [0, 0]])
-        reshaped = tf.reshape(padded, (-1, dilation, out_channels))
-        transposed = tf.transpose(reshaped, perm=(1, 0, 2))
-        transformed = tf.reshape(transposed, (out_width, -1, out_channels))
-        return transformed
-    
+    shape = tf.shape(tensor)
+    out_width = tf.to_int32(shape[0] * dilation)
+    _, _, out_channels = tensor.get_shape().as_list()
+    padding = dilation - 1 - (shape[1] + dilation - 1) % dilation
+    padded = tf.pad(tensor, [[0, 0], [0, padding], [0, 0]])
+    reshaped = tf.reshape(padded, (-1, dilation, out_channels))
+    transposed = tf.transpose(reshaped, perm=(1, 0, 2))
+    transformed = tf.reshape(transposed, (out_width, -1, out_channels))
+    return transformed
+
 def causal_restore(tensor, dilation=1, name=None):
     '''Reshape batch back to 1d time-series after dilation'''
-    with tf.name_scope('batch_to_time'):
-        shape = tf.shape(tensor)
-        out_width = tf.div(shape[0], dilation)
-        _, _, out_channels = tensor.get_shape().as_list()
-        reshaped = tf.reshape(tensor, (dilation, -1, out_channels))
-        transposed = tf.transpose(reshaped, perm=(1, 0, 2))
-        return tf.reshape(transposed, (out_width, -1, out_channels))
-        
+    shape = tf.shape(tensor)
+    out_width = tf.div(shape[0], dilation)
+    _, _, out_channels = tensor.get_shape().as_list()
+    reshaped = tf.reshape(tensor, (dilation, -1, out_channels))
+    transposed = tf.transpose(reshaped, perm=(1, 0, 2))
+    return tf.reshape(transposed, (out_width, -1, out_channels))
+    
 def causal_conv(tensor, filters=256, kernel_size=2, dilation=1,
                 activation=None, use_bias=False, name='causal_conv'):
-    with tf.name_scope(name):
+    with tf.variable_scope(name):
         input_shape = tensor.get_shape().as_list()
         # preserve causality by padding beforehand
         causal_padding = int(kernel_size - 1) * dilation
         padded = tf.pad(tensor, [[0, 0], [causal_padding, 0], [0, 0]])
         if dilation > 1:
             dilated = causal_transform(padded, dilation=dilation)
-            dilated_conv = tf.layers.conv1d(dilated,
+            dilated_conv = conv_layer(dilated,
                                             filters=filters,
                                             kernel_size=kernel_size, 
                                             strides=1, padding='SAME', 
@@ -47,35 +45,47 @@ def causal_conv(tensor, filters=256, kernel_size=2, dilation=1,
             restored = causal_restore(dilated_conv, dilation=dilation) 
         else:
             # no dilations
-            restored = tf.layers.conv1d(padded,
+            restored = conv_layer(padded,
                                         filters=filters, 
                                         kernel_size=kernel_size, 
                                         strides=1, padding='SAME', 
                                         activation=activation,
                                         use_bias=use_bias)
-        '''
-        restored = tf.layers.conv1d(padded,
-                                    filters=filters,
-                                    kernel_size=kernel_size, 
-                                    dilation_rate=dilation,
-                                    strides=1,
-                                    padding='SAME', 
-                                    activation=activation,
-                                    use_bias=use_bias,
-                                    )#name='dilation-{}'.format(dilation))
-        '''
                                  
         # Add additional shape information.
-        cropped = tf.slice(restored,
+        restored = tf.slice(restored,
                             [0, 0, 0],
                             [-1, tf.shape(tensor)[1], -1])
         output_shape = [tf.Dimension(None),
                         tf.Dimension(input_shape[1]),
-                        tf.Dimension(input_shape[2])]
-        cropped.set_shape(tf.TensorShape(output_shape))
-        return cropped
+                        tf.Dimension(filters)]
+        restored.set_shape(tf.TensorShape(output_shape))
+        return restored
 
 
+
+def conv_layer(tensor, filters=256, kernel_size=2,
+           strides=1, padding='SAME', gain=np.sqrt(2), 
+           activation=None, use_bias=False, name='conv_layer'):
+    '''One dimension convolution helper function.
+       Sets variables with good defaults.
+    '''   
+    with tf.variable_scope(name) as scope:
+        in_channels = tensor.get_shape().as_list()[-1]
+        w = tf.get_variable(name='w',
+                            shape=(kernel_size, in_channels, filters),
+                            initializer=tf.random_normal_initializer(
+                                stddev=gain / np.sqrt(kernel_size**2 * in_channels)
+                            ))
+        result = tf.nn.conv1d(tensor, w, stride=strides, padding=padding)
+    if use_bias:
+        b = tf.get_variable(name='b',
+                            shape=(filters, ),
+                            initializer=tf.constant_initializer(0.0))
+        result = result + tf.expand_dims(tf.expand_dims(b, 0), 0)
+    if activation:
+        result = activation(result)
+    return result
 
     
 ###############################################################################
@@ -134,26 +144,20 @@ class Poseidon(object):
                                
     def create_placeholder(self):
         with tf.name_scope('data'):
-            self.signals = tf.placeholder(tf.float32, [None, self.max_seq_len], name="signals_placeholder")
-            # CTC expects labels as SparseTensor
-            self.y_indices = tf.placeholder(tf.int64)
-            self.y_values = tf.placeholder(tf.int32)
-            self.y_shape = tf.placeholder(tf.int64)  
+            self.signals = tf.placeholder(tf.float32, [None, self.max_seq_len], name="signals")
             
-            self.sig_length = tf.placeholder(tf.int32, [None], name='sig_length_placeholder')
-            self.base_length = tf.placeholder(tf.int32, [None], name='base_length_placeholder')
+            # CTC expects labels as SparseTensor
+            self.y_indices = tf.placeholder(tf.int64, name="y_indices")
+            self.y_values = tf.placeholder(tf.int32, name="y_values")
+            self.y_shape = tf.placeholder(tf.int64, name="y_shape") 
+            
+            self.sig_length = tf.placeholder(tf.int32, [None], name='sig_length')
+            self.base_length = tf.placeholder(tf.int32, [None], name='base_length')
             self.dropout_keep = tf.placeholder(tf.float32, [], name='dropout_keep')
             self.is_training = tf.placeholder(tf.bool, [], name='is_training')
             self.global_step = tf.Variable(0, dtype=tf.int32, trainable=False, name='global_step')
             self.lr = tf.placeholder(tf.float32, name='learning_rate')
 
-            # summaries
-            self.signal_batch = tf.placeholder(tf.float32, [None, self.max_seq_len, 1], name="signal_batch")
-            self.wavenet_out = tf.placeholder(tf.float32, [None, self.max_seq_len, self.filters], name="wavenet_out")
-            self.chiron_out = tf.placeholder(tf.float32, [None, self.max_seq_len, self.filters], name="chiron_out")
-            self.lstm_out = tf.placeholder(tf.float32, [None, self.max_seq_len, self.filters], name="lstm_in")
-            self.lstm_out = tf.placeholder(tf.float32, [None, 2*self.lstm_size], name="lstm_out")
-            
 
             
     def _loss(self):
@@ -206,7 +210,7 @@ class Poseidon(object):
 
 
     def predict(self, module_scope):
-        with tf.name_scope(module_scope):
+        with tf.variable_scope(module_scope):
             # prediction
             self.predictions = tf.nn.ctc_beam_search_decoder(
                 tf.transpose(self.logits, perm=[1,0,2]), self.sig_length,
@@ -218,10 +222,9 @@ class Poseidon(object):
                 normalize=False)
             self.error = tf.reduce_sum(self.edit_distances) / tf.to_float(tf.size(labels.values))
 
-           
-    def wavenet_layer(self, layer_input, dilation=1, name=None):
+               
+    def wavenet_layer(self, layer_input, dilation=1, name='wavenet_layer'):
         """Creates a single Wavenet causal dilated convolution layer."""
-        assert name
         with tf.variable_scope(name):
             conv_filter = causal_conv(layer_input, self.dilation_filters,
                                       self.kernel_size, dilation=dilation,
@@ -230,96 +233,95 @@ class Poseidon(object):
                                     self.kernel_size, dilation=dilation, 
                                     name='conv_gate')
             out = tf.tanh(conv_filter) * tf.sigmoid(conv_gate)
-            residual = tf.layers.conv1d(out,
-                                        self.residual_filters, 1,
-                                        strides=1, padding='SAME',
-                                        activation=self.activation,
-                                        use_bias=self.use_bias,
-                                        name='residual')
-            # are these just the same if residual_filters = skip_filters? 
-            skip_connection = tf.layers.conv1d(out,
-                                               self.skip_filters, 1,                                   
-                                               strides=1, padding='SAME',
-                                               activation=self.activation,
-                                               use_bias=self.use_bias,
-                                               name='skip_connection')
+            residual = conv_layer(out,
+                                  self.residual_filters,
+                                  kernel_size=1,
+                                  activation=self.activation,
+                                  use_bias=self.use_bias,
+                                  name='residual')
+            skip_connection = conv_layer(out,
+                                          self.skip_filters,
+                                          kernel_size=1,
+                                          activation=self.activation,
+                                          use_bias=self.use_bias,
+                                          name='skip_connection')
             return layer_input + residual, skip_connection
 
-        
+            
+    def wavenet_block(self, current_layer, name='wavenet_block'):
+        """Creates a block of Wavenet causal dilated convolution layers."""
+        block_output = 0
+        for l in range(self.layers):
+            current_layer, skip = self.wavenet_layer(
+                current_layer,
+                dilation=self.dilation_factor**l,
+                name=name+'/layer-%s'%l)
+            block_output += skip 
+        return current_layer, block_output
+      
     def wavenet_stack(self, input_batch, name='wavenet_stack'):
         '''Creates the Wavenet network, and applies to input_batch.
         '''
-        with tf.name_scope(name):
-            outputs = []
-            current_layer = input_batch
-            with tf.name_scope('wavenet_causal'):
-                # preserve causality in signal
-                current_layer = causal_conv(current_layer,
-                                            self.residual_filters,
-                                            kernel_size=self.kernel_size,
-                                            dilation=1)
-            with tf.name_scope('dilation_stack'):
-                # collect skip output
-                for b in range(self.blocks):
-                    for l in range(self.layers):
-                        current_layer, skip = self.wavenet_layer(
-                            current_layer,
-                            dilation=self.dilation_factor**l,
-                            name='block-{}/layer-{}'.format(b,l))
-                        outputs.append(skip)
-            with tf.name_scope('output_layer'):
-                # process: (+) -> ReLU -> 1x1 conv -> ReLU -> 1x1 conv
-                total = sum(outputs)
-                activated_1 = self.activation(total)
-                conv_1 = tf.layers.conv1d(activated_1,
-                                          filters=self.skip_filters,
-                                          kernel_size=1, activation=None,
-                                          strides=1, padding='SAME',
-                                          use_bias=self.use_bias)
-                activated_2 = self.activation(conv_1)
-                conv_2 = tf.layers.conv1d(activated_2,
-                                filters=self.filters, #quantization_filters,
-                                kernel_size=1, activation=None,
-                                strides=1, padding='SAME',
-                                use_bias=self.use_bias)
+        stack_output = 0
+        current_block = input_batch
+
+        # 1. preserve causality in signal
+        current_block = causal_conv(current_block,
+                                    self.residual_filters,
+                                    kernel_size=self.kernel_size,
+                                    dilation=1)
+        
+        # 2. collect skip output
+        for b in range(self.blocks):
+            current_block, skip = self.wavenet_block(current_block, name='block-%s'%b)
+            stack_output += skip 
+
+        # 3. process: (+) -> ReLU -> 1x1 conv -> ReLU -> 1x1 conv
+        active_1 = self.activation(stack_output)
+        conv_1 = conv_layer(active_1,
+                                  filters=self.skip_filters,
+                                  kernel_size=1, activation=None,
+                                  strides=1, padding='SAME',
+                                  use_bias=self.use_bias,
+                                  name='conv_1')
+        active_2 = self.activation(conv_1)
+        conv_2 = conv_layer(active_2,
+                        filters=self.filters, #quantization_filters,
+                        kernel_size=1, activation=None,
+                        strides=1, padding='SAME',
+                        use_bias=self.use_bias,
+                        name='conv_2')
         return conv_2
 
     
     def lstm_stack(self, input_batch, name='lstm_stack'):
         '''Create and apply bi-directional LSTM to input batch
         '''
-        current_layer = input_batch
-        if self.lstm_size == 0 or self.lstm_cells == 0:
-            return current_layer
-        # dropout on the last layer to give noisier inputs to rnn
-        with tf.name_scope('dropout'):
-            current_layer = tf.nn.dropout(current_layer, self.dropout_keep)   
         #  representation of entire series! (with 3-layer lstm)
-        with tf.name_scope('lstm'):
-            forward_cells = [tf.nn.rnn_cell.BasicLSTMCell(self.lstm_size)
-                             for i in range(self.lstm_cells)] 
-            backward_cells = [tf.nn.rnn_cell.BasicLSTMCell(self.lstm_size)
-                              for i in range(self.lstm_cells)] 
-            output, last_for, last_back = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
-                forward_cells, backward_cells, current_layer, 
-                sequence_length=self.sig_length, dtype=tf.float32)
-            output = tf.reshape(output, (-1, 2*self.lstm_size))
-        return output
+        forward_cells = [tf.nn.rnn_cell.BasicLSTMCell(self.lstm_size) for i in range(self.lstm_cells)] 
+        backward_cells = [tf.nn.rnn_cell.BasicLSTMCell(self.lstm_size) for i in range(self.lstm_cells)] 
+        output, last_for, last_back = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(
+            forward_cells, backward_cells, input_batch, sequence_length=self.sig_length, dtype=tf.float32)
+        output_rs = tf.reshape(output, (-1, 2*self.lstm_size))
+        return output_rs
 
     
     def encode(self, module_scope):
         with tf.variable_scope(module_scope) as scope:
-            signal_batch = tf.expand_dims(self.signals, axis=-1)
-            wavenet_output = self.wavenet_stack(signal_batch)
-            lstm_output = self.lstm_stack(wavenet_output)    
-            dense_output = tf.layers.dense(lstm_output,
-                                           self.classes,
-                                           name='final_dense')
-            self.logits = tf.reshape(dense_output,
-                                     (-1, self.max_seq_len, self.classes))
+            # reshape layer
+            raw_signal = tf.expand_dims(self.signals, axis=-1)
 
+            # 1. CNN stack, dropout for noisier rnn inputs
+            cnn_output = self.wavenet_stack(raw_signal)
+            cnn_dropout = tf.nn.dropout(cnn_output, self.dropout_keep)
 
-            
+            # 2. RNN stack
+            rnn_output = self.lstm_stack(cnn_dropout)    
+
+            # final dense, reshape layers
+            dense_output = tf.layers.dense(rnn_output, self.classes)
+            self.logits = tf.reshape(dense_output, (-1, self.max_seq_len, self.classes))
+
 
 ###############################################################################
 ### subclassed models
@@ -331,7 +333,7 @@ class Triton(Poseidon):
         Poseidon.__init__(self, **kwargs)
 
     def chiron_block(self, input_batch, name='chiron_block'):
-        with tf.name_scope(name):
+        with tf.variable_scope(name):
             conv1 = tf.layers.conv1d(input_batch, filters=self.filters,
                                      kernel_size=1, strides=1, use_bias=False,
                                      padding='same', activation=tf.nn.relu)
@@ -345,36 +347,27 @@ class Triton(Poseidon):
                                      padding='same')
             return tf.nn.relu(conv3 + conv1a)
         
-    def chiron_stack(self, inputs, name='chiron_stack'):
-        with tf.name_scope(name):
-            hidden = inputs
-            for b in range(self.blocks):
-                hidden = self.chiron_block(hidden, name='res-%d'%b)
-            return hidden
+    def chiron_stack(self, input_batch, name='chiron_stack'):
+        current_layer = input_batch
+        for b in range(self.blocks):
+            current_layer = self.chiron_block(current_layer, name='res-%d'%b)
+        return current_layer
 
-        
+    
     def encode(self, module_scope):
         with tf.variable_scope(module_scope) as scope:
-            # reshape signals
-            signal_batch = tf.expand_dims(self.signals, axis=-1)
+            # reshape layer
+            raw_signal = tf.expand_dims(self.signals, axis=-1)
 
-            # wavenet stack
-            wavenet = self.wavenet_stack(signal_batch)
+            # 1. CNN stacks (Wavenet->Chiron), dropout for noisier rnn inputs
+            cnn_output_1 = self.wavenet_stack(raw_signal)
+            cnn_output_2 = self.chiron_stack(cnn_output_1)
+            cnn_dropout = tf.nn.dropout(cnn_output_2, self.dropout_keep)
 
-            # chiron stack
-            chiron = self.chiron_stack(signal_batch)
-            
-            # combine
-            lstm_inputs = self.activation(wavenet + chiron)
-            #lstm_inputs = tf.mul(
-            #    self.activation(wavenet_output),
-            #    self.activation(chiron_output))
+            # 2. RNN stack
+            rnn_output = self.lstm_stack(cnn_dropout)    
 
-            # lstm -> FC -> reshape
-            lstm_output = self.lstm_stack(lstm_inputs)
-            dense_output = tf.layers.dense(lstm_output,
-                                           self.classes,
-                                           name='final_dense')
-            self.logits = tf.reshape(dense_output,
-                                     (-1, self.max_seq_len, self.classes))
-            
+            # final dense, reshape layers
+            dense_output = tf.layers.dense(rnn_output, self.classes)
+            self.logits = tf.reshape(dense_output, (-1, self.max_seq_len, self.classes))
+
